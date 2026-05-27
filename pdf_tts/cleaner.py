@@ -3,13 +3,17 @@ pdf_tts/cleaner.py
 ------------------
 Text cleaning pipeline for TTS-ready narration.
 
-Takes raw Marker-extracted markdown and produces clean, natural-sounding
+Takes raw extracted text/markdown and produces clean, natural-sounding
 prose by removing:
   - Markdown formatting symbols
   - Inline citations  ([1], [Smith 2020], etc.)
   - Figure / Table captions
   - Standalone page numbers
   - Bare URLs and image tags
+  - Author affiliation blocks and email addresses
+  - JSTOR / publisher download notices (per-page footers)
+  - Running page headers (ALL-CAPS repeated journal/paper titles)
+  - Journal volume/issue/page footer lines
   - Optionally the entire References / Bibliography section
 """
 
@@ -21,9 +25,60 @@ from .logger import log
 # ---------------------------------------------------------------------------
 
 _REFERENCE_HEADERS = re.compile(
-    r"^#+\s*(references?|bibliography|works\s+cited|further\s+reading)\s*$",
+    r"^(#{1,6}\s*)?(references?|bibliography|works\s+cited|further\s+reading"
+    r"|acknowledgements?|appendix|footnotes?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+
+# JSTOR / publisher per-page download notice (spans 2-3 lines)
+_JSTOR_NOTICE = re.compile(
+    r"This content downloaded from[\s\S]{0,200}?(?:All use subject to\s+\S+|jstor\.org/terms[^\n]*)",
+    re.IGNORECASE,
+)
+
+# Journal header/footer lines:
+# e.g. "MIS Quarterly Vol. 40 No. 4, pp. 807-818/December 2016 807"
+# e.g. "Journal of Information Systems Vol. 12 No. 3"
+_JOURNAL_LINE = re.compile(
+    r"^.{0,120}(?:vol(?:ume)?[\s.]\s*\d+|no[\s.]\s*\d+|pp?\.\s*\d+[-/\d]*"
+    r"|\bissn\b|\bdoi\b[:\s]|\bceur\b|workshop\s+proceedings"
+    r"|copyright\s+\d{4}|creative\s+commons|ceur-ws\.org"
+    r"|quarterly|journal\s+of\s+\w+|proceedings\s+of|transactions\s+on).{0,120}$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Author affiliation blocks: lines that are just an institution / city / country,
+# typically appearing at the top of a paper (1-2 lines per author, no sentence structure).
+# Detected as short lines (< 80 chars) containing known affiliation keywords.
+_AFFILIATION_LINE = re.compile(
+    r"^.{0,80}(?:university|school\s+of|department\s+of|institute\s+of"
+    r"|college\s+of|faculty\s+of|leuven|carlson|polytechnic"
+    r"|u\.s\.a\.|u\.k\.|china|belgium|germany|france|italy|japan|canada|australia).{0,80}$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Email addresses in curly braces: {name@domain.com}
+_CURLY_EMAIL = re.compile(r"\{[^}]*@[^}]*\}")
+
+# Bare email addresses
+_BARE_EMAIL = re.compile(r"\b[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}\b")
+
+# ALL-CAPS lines that are likely running page headers (≥ 4 words, all caps/spaces/&)
+# Must be a whole line, short enough to be a header (< 80 chars)
+_ALLCAPS_HEADER = re.compile(
+    r"^(?:[A-Z0-9][A-Z0-9\s&:,'\-–/]{10,78})$",
+    re.MULTILINE,
+)
+
+# IP address lines (from JSTOR download notices)
+_IP_ADDRESS_LINE = re.compile(
+    r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}.*$",
+    re.MULTILINE,
+)
+
+# Lines that are just a number with optional surrounding text that look like
+# journal page numbers at end of lines: "... 807" or "807" standalone
+_JOURNAL_PAGE_NUM = re.compile(r"(?<!\d)\b[89]\d{2}\b\s*$", re.MULTILINE)
 
 
 # ---------------------------------------------------------------------------
@@ -31,13 +86,10 @@ _REFERENCE_HEADERS = re.compile(
 # ---------------------------------------------------------------------------
 
 def _remove_references_section(text: str) -> str:
-    """
-    Truncate text at the first References / Bibliography heading so that
-    boilerplate citation lists are never narrated.
-    """
+    """Truncate at the first References/Bibliography/Acknowledgements heading."""
     match = _REFERENCE_HEADERS.search(text)
     if match:
-        log.info("References section found at char %d – removing.", match.start())
+        log.info("Section boundary '%s' found at char %d – truncating.", match.group().strip(), match.start())
         return text[: match.start()]
     return text
 
@@ -51,33 +103,43 @@ def clean_text(text: str, remove_references: bool = True) -> str:
     Clean *text* for clean TTS narration.
 
     Processing order:
-      1. Optionally strip the References / Bibliography section.
-      2. Remove ATX headings (keep words, drop # symbols).
-      3. Remove horizontal rules.
-      4. Remove markdown tables.
-      5. Remove fenced and inline code blocks.
-      6. Remove images and hyperlinks (keep link text).
-      7. Remove bare URLs.
-      8. Remove bold / italic markers.
-      9. Remove numeric and author-year citations.
-      10. Remove superscript footnote numbers.
-      11. Remove Figure / Table / Equation captions.
-      12. Remove standalone page-number lines.
-      13. Normalise whitespace and blank lines.
-
-    Args:
-        text:              Raw markdown / extracted text.
-        remove_references: If True, drop everything from the first
-                           References heading onward.
-
-    Returns:
-        Cleaned plain-text string ready for sentence tokenisation.
+      1.  Optionally strip from the References/Bibliography/Acknowledgements heading.
+      2.  Remove JSTOR and publisher per-page download notices.
+      3.  Remove journal volume/issue/page header and footer lines.
+      4.  Remove IP address lines.
+      5.  Remove ALL-CAPS running page headers.
+      6.  Remove email addresses (curly-brace and bare forms).
+      7.  Remove ATX markdown headings (keep words, drop # symbols).
+      8.  Remove horizontal rules.
+      9.  Remove markdown tables.
+      10. Remove fenced and inline code blocks.
+      11. Remove images and hyperlinks (keep link text).
+      12. Remove bare URLs.
+      13. Remove bold / italic markers.
+      14. Remove numeric and author-year citations.
+      15. Remove superscript footnote numbers.
+      16. Remove Figure / Table / Equation captions.
+      17. Remove standalone page-number lines.
+      18. Normalise whitespace and blank lines.
 
     Raises:
         ValueError – if the result is empty after cleaning.
     """
     if remove_references:
         text = _remove_references_section(text)
+
+    # ── Publisher boilerplate ────────────────────────────────────────────────
+    text = _JSTOR_NOTICE.sub("", text)
+    text = _JOURNAL_LINE.sub("", text)
+    text = _IP_ADDRESS_LINE.sub("", text)
+    text = _ALLCAPS_HEADER.sub("", text)
+
+    # ── Author affiliation blocks ─────────────────────────────────────────────
+    text = _AFFILIATION_LINE.sub("", text)
+
+    # ── Email addresses ──────────────────────────────────────────────────────
+    text = _CURLY_EMAIL.sub("", text)
+    text = _BARE_EMAIL.sub("", text)
 
     # ── Markdown structure ───────────────────────────────────────────────────
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)          # headings
@@ -109,7 +171,7 @@ def clean_text(text: str, remove_references: bool = True) -> str:
         flags=re.IGNORECASE | re.MULTILINE,
     )
 
-    # ── Page numbers ─────────────────────────────────────────────────────────
+    # ── Standalone page numbers ───────────────────────────────────────────────
     text = re.sub(r"^\s*\d+\s*$", "", text, flags=re.MULTILINE)
 
     # ── Whitespace normalisation ─────────────────────────────────────────────
