@@ -32,6 +32,7 @@ def run_pipeline(
     keep_chunks: bool = False,
     remove_references: bool = True,
     chunk_size: int = CHUNK_TARGET_CHARS,
+    fast: bool = False,
 ) -> None:
     """
     Run the full PDF → audiobook pipeline.
@@ -45,6 +46,8 @@ def run_pipeline(
         keep_chunks:       Retain intermediate per-chunk WAV files.
         remove_references: Strip the References / Bibliography section.
         chunk_size:        Target character count per TTS chunk.
+        fast:              Use pdftext for extraction (instant, digital PDFs only).
+                           If False, use Marker (handles scanned PDFs, much slower).
     """
     pdf_stem = pdf_path.stem
 
@@ -63,7 +66,7 @@ def run_pipeline(
     dirs = ensure_dirs(output_dir)
 
     # 3 – PDF extraction
-    md_path  = extract_pdf(pdf_path, dirs["markdown"])
+    md_path  = extract_pdf(pdf_path, dirs["markdown"], fast=fast)
     raw_text = read_markdown(md_path)
 
     # 4 – Text cleaning
