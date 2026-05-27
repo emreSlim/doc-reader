@@ -1,0 +1,11 @@
+# PDF Extraction
+marker-pdf
+
+# Text Processing
+nltk
+
+# Audio / Numeric
+numpy
+
+# FFmpeg is required as a system install (https://ffmpeg.org/download.html)
+# Piper TTS is required as a standalone binary (https://github.com/rhasspy/piper/releases)
