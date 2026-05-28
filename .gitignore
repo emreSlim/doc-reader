@@ -1,5 +1,0 @@
-.venv/Lib/*
-/piper/*
-/input/*
-/output/*
-*/__pycache__/*

@@ -1,0 +1,5 @@
+.venv/
+piper/
+input/
+output/
+*/__pycache__/*
