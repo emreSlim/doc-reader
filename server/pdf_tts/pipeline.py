@@ -10,6 +10,7 @@ This module contains no I/O logic of its own; it delegates everything to
 the specialised modules (extractor, cleaner, chunker, tts, merger).
 """
 
+import wave as _wave_module
 from pathlib import Path
 
 from .config import CHUNK_TARGET_CHARS
@@ -21,6 +22,15 @@ from .merger import merge_audio
 from .utils import ensure_dirs
 from .validator import validate_dependencies
 from .logger import log
+
+
+def _get_wav_duration(path: Path) -> float:
+    """Return the duration of a WAV file in seconds."""
+    try:
+        with _wave_module.open(str(path), "r") as w:
+            return w.getnframes() / float(w.getframerate())
+    except Exception:
+        return 0.0
 
 
 def run_pipeline(
@@ -85,6 +95,20 @@ def run_pipeline(
         model_path=model_path,
     )
 
+    # Compute chunk timing from WAV durations BEFORE potential deletion
+    cumulative = 0.0
+    chunk_timing: list[dict] = []
+    for i, (wav_path, chunk_text) in enumerate(zip(audio_files, chunks)):
+        dur = _get_wav_duration(wav_path)
+        chunk_timing.append({
+            "index": i,
+            "text": chunk_text,
+            "start": round(cumulative, 3),
+            "end": round(cumulative + dur, 3),
+        })
+        cumulative += dur
+    log.info("Computed chunk timing: %d chunks, total %.1fs", len(chunk_timing), cumulative)
+
     # 7 – Merge
     final_wav = merge_audio(
         audio_files=audio_files,
@@ -105,6 +129,7 @@ def run_pipeline(
         "extracted_path": str(md_path),
         "extraction_metadata_path": str(get_extraction_metadata_path(md_path)),
         "chunk_files": [str(path) for path in chunk_files],
+        "chunk_timing": chunk_timing,
         "final_wav": str(final_wav),
         "final_mp3": str(final_mp3) if final_mp3.exists() else None,
         "output_dir": str(output_dir),

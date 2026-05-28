@@ -10,10 +10,13 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
 from pdf_tts.cleaner import clean_text
 from pdf_tts.config import (
@@ -30,9 +33,20 @@ from pdf_tts.validator import validate_dependencies
 
 app = FastAPI(title="PDF TTS API", version="1.0.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 INPUT_UPLOAD_DIR = WORKSPACE_ROOT / "input" / "api_uploads"
 INPUT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# In-memory job registry
+_jobs: dict[str, dict] = {}
 
 
 def _safe_filename(name: str) -> str:
@@ -61,6 +75,39 @@ async def _resolve_pdf_source(
     content = await file.read()
     target.write_bytes(content)
     return target
+
+
+def _run_pipeline_bg(
+    job_id: str,
+    pdf: Path,
+    model: Path,
+    piper: Path,
+    out_root: Path,
+    generate_mp3: bool,
+    remove_references: bool,
+    chunk_size: int,
+    fast: bool,
+) -> None:
+    try:
+        validate_dependencies(piper_exe=piper, model_path=model)
+        result = run_pipeline(
+            pdf_path=pdf,
+            model_path=model,
+            piper_exe=piper,
+            output_dir=out_root,
+            generate_mp3=generate_mp3,
+            keep_chunks=True,
+            remove_references=remove_references,
+            chunk_size=chunk_size,
+            fast=fast,
+        )
+        _jobs[job_id]["status"] = "done"
+        _jobs[job_id]["result"] = result
+        log.info("Job %s completed.", job_id)
+    except Exception as exc:
+        log.exception("Job %s failed", job_id)
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
 
 
 @app.get("/health")
@@ -106,17 +153,21 @@ async def extract_endpoint(
 
 @app.post("/api/v1/process")
 async def process_endpoint(
-    pdf_path: str | None = Form(default=None),
-    file: UploadFile | None = File(default=None),
+    background_tasks: BackgroundTasks,
+    pdf_path: Optional[str] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
     fast: bool = Form(default=True),
     remove_references: bool = Form(default=True),
     chunk_size: int = Form(default=CHUNK_TARGET_CHARS),
-    keep_chunks: bool = Form(default=False),
     generate_mp3: bool = Form(default=True),
     output_dir: str = Form(default=str(DEFAULT_OUTPUT_DIR)),
     model_path: str = Form(default=str(DEFAULT_MODEL_PATH)),
     piper_exe: str = Form(default=str(DEFAULT_PIPER_EXE)),
 ):
+    """
+    Upload a PDF and start the TTS pipeline as a background job.
+    Returns job_id immediately; poll GET /api/v1/jobs/{job_id} for status.
+    """
     pdf = await _resolve_pdf_source(pdf_path, file)
 
     out_root = Path(output_dir)
@@ -131,21 +182,82 @@ async def process_endpoint(
     if not piper.is_absolute():
         piper = (WORKSPACE_ROOT / piper).resolve()
 
-    try:
-        validate_dependencies(piper_exe=piper, model_path=model)
-        result = run_pipeline(
-            pdf_path=pdf,
-            model_path=model,
-            piper_exe=piper,
-            output_dir=out_root,
-            generate_mp3=generate_mp3,
-            keep_chunks=keep_chunks,
-            remove_references=remove_references,
-            chunk_size=chunk_size,
-            fast=fast,
-        )
-    except (FileNotFoundError, EnvironmentError, ValueError, RuntimeError) as exc:
-        log.exception("Processing failed")
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job_id = str(uuid.uuid4())
+    _jobs[job_id] = {
+        "status": "processing",
+        "pdf_path": str(pdf),
+        "result": None,
+        "error": None,
+    }
+    log.info("Started job %s for PDF: %s", job_id, pdf.name)
 
-    return JSONResponse(result)
+    background_tasks.add_task(
+        _run_pipeline_bg,
+        job_id, pdf, model, piper, out_root,
+        generate_mp3, remove_references, chunk_size, fast,
+    )
+
+    return {"job_id": job_id, "status": "processing"}
+
+
+@app.get("/api/v1/jobs/{job_id}")
+def get_job(job_id: str):
+    """Poll job status. Returns chunk_timing list when done."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    if job["status"] == "processing":
+        return {"job_id": job_id, "status": "processing"}
+
+    if job["status"] == "error":
+        return {"job_id": job_id, "status": "error", "error": job.get("error")}
+
+    result = job["result"]
+    return {
+        "job_id": job_id,
+        "status": "done",
+        "chunk_timing": result.get("chunk_timing", []),
+        "has_mp3": bool(result.get("final_mp3")),
+        "pdf_name": Path(result["pdf_path"]).name,
+    }
+
+
+@app.get("/api/v1/jobs/{job_id}/audio")
+def get_audio(job_id: str):
+    """Stream the generated audio (MP3 preferred, WAV fallback)."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "done":
+        raise HTTPException(status_code=400, detail=f"Job not done (status: {job['status']})")
+
+    result = job["result"]
+    audio_path_str = result.get("final_mp3") or result.get("final_wav")
+    if not audio_path_str:
+        raise HTTPException(status_code=404, detail="No audio file in result")
+
+    audio_path = Path(audio_path_str)
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail=f"Audio file missing: {audio_path}")
+
+    media_type = "audio/mpeg" if audio_path.suffix == ".mp3" else "audio/wav"
+    return FileResponse(
+        str(audio_path),
+        media_type=media_type,
+        headers={"Accept-Ranges": "bytes"},
+    )
+
+
+@app.get("/api/v1/jobs/{job_id}/pdf")
+def get_pdf_file(job_id: str):
+    """Serve the original PDF so the browser can render it."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    pdf_path = Path(job["pdf_path"])
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF file not found on server")
+
+    return FileResponse(str(pdf_path), media_type="application/pdf")
