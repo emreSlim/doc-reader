@@ -21,15 +21,86 @@ import shutil
 import subprocess
 import sys
 import time
+import re
+import json
 from pathlib import Path
 from typing import List
 
+from .layout_filter import block_is_kept_by_layout, detect_layout_regions
 from .logger import log
 
 
 # ---------------------------------------------------------------------------
 # Column-aware block sorting
 # ---------------------------------------------------------------------------
+
+TOP_MARGIN_PCT = 0.08
+BOTTOM_MARGIN_PCT = 0.12
+REPEATED_MARGIN_MIN_COUNT = 2
+
+
+def _normalize_line_fingerprint(text: str) -> str:
+    """Normalize text for repeated-header/footer detection."""
+    t = text.lower()
+    t = re.sub(r"\d+", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def _block_to_text(block: dict) -> str:
+    """Flatten a pdftext block into plain text."""
+    lines = block.get("lines", [])
+    line_texts: List[str] = []
+    for line in lines:
+        span_texts = []
+        for span in line.get("spans", []):
+            t = span.get("text", "").strip()
+            if t:
+                span_texts.append(t)
+        line_text = " ".join(span_texts).strip()
+        if line_text:
+            line_texts.append(line_text)
+    return "\n".join(line_texts).strip()
+
+
+def _metadata_path_for_text(text_path: Path) -> Path:
+    """Return companion metadata path for an extracted text file."""
+    return text_path.with_name(f"{text_path.stem}_meta.json")
+
+
+def _collect_repeated_margin_fingerprints(pages: list) -> set[str]:
+    """
+    Collect repeated top/bottom margin texts across pages.
+
+    This is content-agnostic and catches running headers/footers even when
+    wording differs only by page number (numbers are stripped in fingerprint).
+    """
+    counts: dict[str, int] = {}
+    for page in pages:
+        page_height = page.get("height", 800) or 800
+        for block in page.get("blocks", []):
+            bbox = block.get("bbox", [0, 0, 0, 0])
+            y_center_pct = ((bbox[1] + bbox[3]) / 2) / page_height
+            in_margin = y_center_pct < TOP_MARGIN_PCT or y_center_pct > (1 - BOTTOM_MARGIN_PCT)
+            if not in_margin:
+                continue
+
+            text = _block_to_text(block)
+            if not text:
+                continue
+
+            fp = _normalize_line_fingerprint(text)
+            if not fp:
+                continue
+            counts[fp] = counts.get(fp, 0) + 1
+
+    repeated = {
+        fp for fp, c in counts.items()
+        if c >= REPEATED_MARGIN_MIN_COUNT
+    }
+    if repeated:
+        log.info("Detected %d repeated margin fingerprints (headers/footers).", len(repeated))
+    return repeated
 
 def _detect_columns(blocks: list, page_width: float) -> int:
     """
@@ -97,41 +168,93 @@ def _sort_blocks_column_aware(blocks: list, page_width: float) -> list:
     return left_sorted + right_sorted
 
 
-def _extract_text_from_pages(pages: list) -> str:
+def _extract_text_from_pages(
+    pages: list,
+    *,
+    layout_regions_by_page: dict[int, list[dict]] | None = None,
+) -> tuple[str, dict]:
     """
     Convert pdftext dictionary_output pages into a single plain-text string
     using column-aware block ordering.
 
     Each page is sorted independently, then pages are joined with double newlines.
+    Returns both plain text and structured metadata for future UI use.
     """
     all_page_texts: List[str] = []
+    repeated_margin_fps = _collect_repeated_margin_fingerprints(pages)
+    metadata_pages: list[dict] = []
 
-    for page in pages:
+    for page_idx, page in enumerate(pages):
         page_width = page.get("width", 600)
+        page_height = page.get("height", 800) or 800
         blocks = page.get("blocks", [])
         sorted_blocks = _sort_blocks_column_aware(blocks, page_width)
+        page_layout_regions = (layout_regions_by_page or {}).get(page_idx, [])
 
         block_texts: List[str] = []
+        metadata_blocks: list[dict] = []
         for block in sorted_blocks:
-            lines = block.get("lines", [])
-            line_texts: List[str] = []
-            for line in lines:
-                # pdftext stores text in span["text"] (not per-char)
-                span_texts = []
-                for span in line.get("spans", []):
-                    t = span.get("text", "").strip()
-                    if t:
-                        span_texts.append(t)
-                line_text = " ".join(span_texts).strip()
-                if line_text:
-                    line_texts.append(line_text)
-            if line_texts:
-                block_texts.append("\n".join(line_texts))
+            text = _block_to_text(block)
+            if not text:
+                continue
+
+            bbox = block.get("bbox", [0, 0, 0, 0])
+            y_center_pct = ((bbox[1] + bbox[3]) / 2) / page_height
+            word_count = len(text.split())
+            keep_block = True
+            drop_reason = None
+            layout_matches: list[dict] = []
+
+            if page_layout_regions:
+                keep_block, layout_matches = block_is_kept_by_layout(bbox, page_layout_regions)
+                if not keep_block:
+                    drop_reason = "layout-filter"
+
+            # 1) Remove repeated top/bottom margin boilerplate across pages.
+            fp = _normalize_line_fingerprint(text)
+            if keep_block and fp in repeated_margin_fps:
+                keep_block = False
+                drop_reason = "repeated-margin"
+
+            # 2) Generic geometric suppression for short margin snippets.
+            #    - top margin on pages after first: likely running header
+            #    - bottom margin on any page: likely footer/page number/publisher note
+            if keep_block and page_idx > 0 and y_center_pct < TOP_MARGIN_PCT and word_count <= 20:
+                keep_block = False
+                drop_reason = "top-margin"
+            if keep_block and y_center_pct > (1 - BOTTOM_MARGIN_PCT) and word_count <= 35:
+                keep_block = False
+                drop_reason = "bottom-margin"
+
+            metadata_blocks.append(
+                {
+                    "bbox": [float(v) for v in bbox],
+                    "text": text,
+                    "kept": keep_block,
+                    "drop_reason": drop_reason,
+                    "layout_matches": layout_matches,
+                }
+            )
+
+            if not keep_block:
+                continue
+
+            block_texts.append(text)
 
         if block_texts:
             all_page_texts.append("\n\n".join(block_texts))
 
-    return "\n\n".join(all_page_texts)
+        metadata_pages.append(
+            {
+                "page_index": page_idx,
+                "width": float(page_width),
+                "height": float(page_height),
+                "layout_regions": page_layout_regions,
+                "blocks": metadata_blocks,
+            }
+        )
+
+    return "\n\n".join(all_page_texts), {"pages": metadata_pages}
 
 
 # ---------------------------------------------------------------------------
@@ -174,21 +297,25 @@ def extract_pdf_fast(pdf_path: Path, markdown_dir: Path) -> Path:
     out_dir = markdown_dir / pdf_stem
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"{pdf_stem}.txt"
+    meta_file = _metadata_path_for_text(out_file)
 
     # Fast-path: already extracted
-    if out_file.exists():
+    if out_file.exists() and meta_file.exists():
         log.info("Text already exists, skipping fast extraction: %s", out_file)
         return out_file
 
-    log.info("Fast extraction (pdftext, column-aware) for: %s", pdf_path.name)
+    log.info("Fast extraction (pdftext + DocLayout-YOLO) for: %s", pdf_path.name)
 
     t0 = time.time()
     pages = dictionary_output(str(pdf_path), sort=False)  # we do our own sorting
-    text = _extract_text_from_pages(pages)
+    layout_regions_by_page = detect_layout_regions(pdf_path)
+    text, metadata = _extract_text_from_pages(
+        pages,
+        layout_regions_by_page=layout_regions_by_page,
+    )
     elapsed = time.time() - t0
 
-    # Fix hyphenated line-breaks (e.g. "informa-\ntion" → "information")
-    import re
+    # Fix hyphenated line-breaks (e.g. "informa-\ntion" -> "information")
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
 
     if not text.strip():
@@ -198,8 +325,21 @@ def extract_pdf_fast(pdf_path: Path, markdown_dir: Path) -> Path:
         )
 
     out_file.write_text(text, encoding="utf-8")
+    meta_file.write_text(
+        json.dumps(
+            {
+                "source_pdf": str(pdf_path),
+                "mode": "fast-layout",
+                "layout_model": "DocLayout-YOLO-DocStructBench",
+                "text_path": str(out_file),
+                **metadata,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     log.info(
-        "Fast extraction complete in %.2fs – %d chars → %s",
+        "Fast extraction complete in %.2fs - %d chars -> %s",
         elapsed, len(text), out_file,
     )
     return out_file
@@ -351,4 +491,9 @@ def read_markdown(md_path: Path) -> str:
 
     log.info("Read %d characters from extracted file.", len(text))
     return text
+
+
+def get_extraction_metadata_path(text_path: Path) -> Path:
+    """Public helper returning the companion metadata path for extracted text."""
+    return _metadata_path_for_text(text_path)
 

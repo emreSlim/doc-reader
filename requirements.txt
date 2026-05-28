@@ -1,11 +1,20 @@
 # PDF Extraction
 marker-pdf
+pymupdf
 
 # Text Processing
 nltk
+trafilatura
+huggingface_hub
 
 # Audio / Numeric
 numpy
+doclayout-yolo
+
+# API
+fastapi
+uvicorn
+python-multipart
 
 # FFmpeg is required as a system install (https://ffmpeg.org/download.html)
 # Piper TTS is required as a standalone binary (https://github.com/rhasspy/piper/releases)

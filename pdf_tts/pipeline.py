@@ -13,7 +13,7 @@ the specialised modules (extractor, cleaner, chunker, tts, merger).
 from pathlib import Path
 
 from .config import CHUNK_TARGET_CHARS
-from .extractor import extract_pdf, read_markdown
+from .extractor import extract_pdf, get_extraction_metadata_path, read_markdown
 from .cleaner import clean_text
 from .chunker import chunk_text, save_chunks
 from .tts import generate_audio
@@ -33,7 +33,7 @@ def run_pipeline(
     remove_references: bool = True,
     chunk_size: int = CHUNK_TARGET_CHARS,
     fast: bool = False,
-) -> None:
+) -> dict:
     """
     Run the full PDF → audiobook pipeline.
 
@@ -74,7 +74,7 @@ def run_pipeline(
 
     # 5 – Sentence chunking
     chunks = chunk_text(clean, target_chars=chunk_size, max_chars=chunk_size + 200)
-    save_chunks(chunks, dirs["chunks"], pdf_stem)
+    chunk_files = save_chunks(chunks, dirs["chunks"], pdf_stem)
 
     # 6 – TTS generation
     audio_files = generate_audio(
@@ -98,3 +98,15 @@ def run_pipeline(
     log.info("Pipeline complete!")
     log.info("Final audio: %s", final_wav)
     log.info("=" * 60)
+
+    final_mp3 = dirs["final"] / f"{pdf_stem}_audiobook.mp3"
+    return {
+        "pdf_path": str(pdf_path),
+        "extracted_path": str(md_path),
+        "extraction_metadata_path": str(get_extraction_metadata_path(md_path)),
+        "chunk_files": [str(path) for path in chunk_files],
+        "final_wav": str(final_wav),
+        "final_mp3": str(final_mp3) if final_mp3.exists() else None,
+        "output_dir": str(output_dir),
+        "fast": fast,
+    }
