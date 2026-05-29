@@ -92,6 +92,16 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
     setCurrentPageIndex(nextIndex)
   }
 
+  const seekToChunk = (idx: number) => {
+    const target = chunkTiming[idx]
+    if (!target || !audioRef.current) return
+    audioRef.current.currentTime = target.start
+    setCurrentTime(target.start)
+  }
+
+  const canGoToPrevBlock = activeChunkIndex > 0
+  const canGoToNextBlock = activeChunkIndex >= 0 && activeChunkIndex < chunkTiming.length - 1
+
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
       {/* Top bar */}
@@ -164,9 +174,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
               chunkTiming={chunkTiming}
               activeChunkIndex={activeChunkIndex}
               onChunkClick={(idx: number) => {
-                if (audioRef.current) {
-                  audioRef.current.currentTime = chunkTiming[idx].start
-                }
+                seekToChunk(idx)
               }}
             />
           </div>
@@ -181,6 +189,14 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
           currentTime={currentTime}
           duration={duration}
           isPlaying={isPlaying}
+          canGoToPrevBlock={canGoToPrevBlock}
+          canGoToNextBlock={canGoToNextBlock}
+          onPrevBlock={() => {
+            if (canGoToPrevBlock) seekToChunk(activeChunkIndex - 1)
+          }}
+          onNextBlock={() => {
+            if (canGoToNextBlock) seekToChunk(activeChunkIndex + 1)
+          }}
           onTimeUpdate={setCurrentTime}
           onDurationChange={setDuration}
           onPlayStateChange={setIsPlaying}

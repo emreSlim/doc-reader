@@ -6,6 +6,10 @@ interface Props {
   currentTime: number
   duration: number
   isPlaying: boolean
+  canGoToPrevBlock?: boolean
+  canGoToNextBlock?: boolean
+  onPrevBlock?: () => void
+  onNextBlock?: () => void
   onTimeUpdate: (t: number) => void
   onDurationChange: (d: number) => void
   onPlayStateChange: (playing: boolean) => void
@@ -20,6 +24,10 @@ export default function AudioPlayer({
   currentTime,
   duration,
   isPlaying,
+  canGoToPrevBlock = false,
+  canGoToNextBlock = false,
+  onPrevBlock,
+  onNextBlock,
   onTimeUpdate,
   onDurationChange,
   onPlayStateChange,
@@ -88,6 +96,15 @@ export default function AudioPlayer({
         ↩ 10
       </button>
 
+      <button
+        onClick={onPrevBlock}
+        disabled={!canGoToPrevBlock}
+        className="text-gray-400 hover:text-white transition-colors text-xs px-2 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="Previous block"
+      >
+        ← Block
+      </button>
+
       {/* Play / Pause */}
       <button
         onClick={handlePlayPause}
@@ -112,6 +129,15 @@ export default function AudioPlayer({
         title="Forward 10s"
       >
         10 ↪
+      </button>
+
+      <button
+        onClick={onNextBlock}
+        disabled={!canGoToNextBlock}
+        className="text-gray-400 hover:text-white transition-colors text-xs px-2 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="Next block"
+      >
+        Block →
       </button>
 
       {/* Time / seek */}
