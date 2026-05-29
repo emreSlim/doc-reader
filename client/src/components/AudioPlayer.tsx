@@ -39,7 +39,7 @@ export default function AudioPlayer({
   // Sync playback rate
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = speed
-  }, [speed, audioRef])
+  }, [speed, audioRef, audioUrl])
 
   const handlePlayPause = () => {
     const audio = audioRef.current
@@ -78,7 +78,11 @@ export default function AudioPlayer({
           if (!seeking.current && audioRef.current)
             onTimeUpdate(audioRef.current.currentTime)
         }}
-        onLoadedMetadata={() => audioRef.current && onDurationChange(audioRef.current.duration)}
+        onLoadedMetadata={() => {
+          if (!audioRef.current) return
+          audioRef.current.playbackRate = speed
+          onDurationChange(audioRef.current.duration)
+        }}
         onPlay={() => onPlayStateChange(true)}
         onPause={() => onPlayStateChange(false)}
         onEnded={() => {
