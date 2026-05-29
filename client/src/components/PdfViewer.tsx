@@ -14,7 +14,12 @@ interface Props {
 export default function PdfViewer({ pdfUrl, activeWord }: Props) {
   const [numPages, setNumPages] = useState<number>(0)
   const [containerWidth, setContainerWidth] = useState(600)
+  const [zoom, setZoom] = useState(1)
   const rootRef = useRef<HTMLDivElement | null>(null)
+
+  const ZOOM_MIN = 0.6
+  const ZOOM_MAX = 2.5
+  const ZOOM_STEP = 0.2
 
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     rootRef.current = node
@@ -51,6 +56,33 @@ export default function PdfViewer({ pdfUrl, activeWord }: Props) {
 
   return (
     <div ref={containerRef} className="p-4 flex flex-col items-center gap-4">
+      <div className="sticky top-2 z-30 w-full max-w-3xl flex justify-end">
+        <div className="flex items-center gap-2 bg-gray-900/90 border border-gray-700 rounded-lg px-2 py-1 shadow">
+          <button
+            onClick={() => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)))}
+            className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700"
+            title="Zoom out"
+          >
+            −
+          </button>
+          <span className="text-xs text-gray-300 min-w-12 text-center">{Math.round(zoom * 100)}%</span>
+          <button
+            onClick={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))}
+            className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700"
+            title="Zoom in"
+          >
+            +
+          </button>
+          <button
+            onClick={() => setZoom(1)}
+            className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700"
+            title="Reset zoom"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+
       <Document
         file={pdfUrl}
         onLoadSuccess={({ numPages }) => setNumPages(numPages)}
@@ -75,6 +107,7 @@ export default function PdfViewer({ pdfUrl, activeWord }: Props) {
               <Page
                 pageNumber={i + 1}
                 width={containerWidth}
+                scale={zoom}
                 renderTextLayer={true}
                 renderAnnotationLayer={false}
               />

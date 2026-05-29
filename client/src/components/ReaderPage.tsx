@@ -174,7 +174,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
       {/* ── Main panels ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* PDF viewer — left 55% */}
-        <div className={`${showTextPanel ? 'w-[55%] border-r border-gray-800' : 'w-full'} overflow-y-auto bg-gray-900`}>
+        <div className={`${showTextPanel ? 'w-[55%] border-r border-gray-800' : 'w-full'} overflow-auto bg-gray-900`}>
           <PdfViewer
             pdfUrl={fullPdfUrl}
             activeWord={activeWord}
