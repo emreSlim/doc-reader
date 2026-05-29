@@ -18,7 +18,8 @@ from .logger import log
 # Use all available CPU cores for parallel Piper subprocesses.
 # Each chunk is a separate OS process so there is no GIL contention.
 # Adjust downward if RAM is limited (each process loads the ONNX model ~150-300 MB).
-DEFAULT_TTS_WORKERS: int = os.cpu_count()-1 or 1
+_CPU_COUNT = os.cpu_count() or 1
+DEFAULT_TTS_WORKERS: int = max(1, round(_CPU_COUNT * 0.7))
 
 
 def generate_audio(
