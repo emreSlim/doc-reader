@@ -12,7 +12,7 @@ import os
 import re
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -56,10 +56,6 @@ async def request_logger(request: Request, call_next):
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 INPUT_UPLOAD_DIR = WORKSPACE_ROOT / "input" / "api_uploads"
 INPUT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-# Thread pool for running pipeline jobs (separate from Uvicorn's own pool).
-# Uses all available CPU cores; each pipeline job spawns its own Piper subprocesses.
-_executor = ThreadPoolExecutor(max_workers=os.cpu_count()-2 or 1, thread_name_prefix="pipeline")
 
 # In-memory job registry
 _jobs: dict[str, dict] = {}
@@ -219,11 +215,13 @@ async def process_endpoint(
         job_id, remove_references, chunk_size, generate_mp3, model.name,
     )
 
-    _executor.submit(
-        _run_pipeline_bg,
-        job_id, pdf, model, piper, out_root,
-        generate_mp3, remove_references, chunk_size,
+    t = threading.Thread(
+        target=_run_pipeline_bg,
+        args=(job_id, pdf, model, piper, out_root, generate_mp3, remove_references, chunk_size),
+        daemon=True,
+        name=f"pipeline-{job_id[:8]}",
     )
+    t.start()
 
     return {"job_id": job_id, "status": "processing"}
 
