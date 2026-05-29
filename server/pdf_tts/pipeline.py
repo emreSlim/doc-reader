@@ -98,11 +98,11 @@ def run_pipeline(
     # Compute chunk timing from WAV durations BEFORE potential deletion
     cumulative = 0.0
     chunk_timing: list[dict] = []
-    for i, (wav_path, chunk_text) in enumerate(zip(audio_files, chunks)):
+    for i, (wav_path, chunk_body) in enumerate(zip(audio_files, chunks)):
         dur = _get_wav_duration(wav_path)
         chunk_timing.append({
             "index": i,
-            "text": chunk_text,
+            "text": chunk_body,
             "start": round(cumulative, 3),
             "end": round(cumulative + dur, 3),
         })
