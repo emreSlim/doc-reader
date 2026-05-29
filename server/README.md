@@ -1,13 +1,13 @@
 # PDF to Audiobook Converter
 
-Convert any PDF — including research papers and two-column academic articles — into a clean, natural-sounding audiobook MP3/WAV using **Marker**, **Piper TTS**, **NLTK**, and **FFmpeg**.
+Convert any PDF — including research papers and two-column academic articles — into a clean, natural-sounding audiobook MP3/WAV using **Marker**, **DocLayout-YOLO**, **Piper TTS**, **NLTK**, and **FFmpeg**.
 
 ---
 
 ## Pipeline Overview
 
 ```
-PDF → Marker (markdown extraction) → Text Cleaning → NLTK Chunking → Piper TTS → FFmpeg Merge → Audiobook
+PDF → Marker extraction + layout filtering → Text Cleaning → NLTK Chunking → Piper TTS → FFmpeg Merge → Chunk→PDF Highlight Mapping
 ```
 
 ---
@@ -32,7 +32,8 @@ tts-reader/
 │   │   └── en_US-amy-medium.onnx.json
 │   └── espeak-ng-data/             ← Required by Piper (included with release)
 │
-├── main.py                         ← Main application
+├── api.py                          ← FastAPI server (used by client)
+├── main.py                         ← Optional CLI entrypoint
 ├── requirements.txt
 └── README.md
 ```
@@ -51,11 +52,7 @@ tts-reader/
 
 ### Python Packages
 
-```
-marker-pdf
-nltk
-numpy
-```
+See [requirements.txt](requirements.txt).
 
 ---
 
@@ -63,8 +60,10 @@ numpy
 
 ### Step 1 – Clone / set up the project
 
+Use a single environment under `server/.venv`.
+
 ```bash
-cd C:\Users\YourName\Desktop\code\tts-reader
+cd C:\Users\YourName\Desktop\code\tts-reader\server
 python -m venv .venv
 .venv\Scripts\activate
 ```
@@ -113,6 +112,23 @@ Recommended voices for audiobook narration:
 ```bash
 python main.py input/my_paper.pdf
 ```
+
+### Run API server (recommended)
+
+```bash
+uvicorn api:app --host localhost --port 8000
+```
+
+### API endpoints
+
+- `GET /health`
+- `POST /api/v1/extract`
+- `POST /api/v1/process`
+- `GET /api/v1/jobs/{job_id}`
+- `GET /api/v1/jobs/{job_id}/metadata`
+- `GET /api/v1/jobs/{job_id}/highlights`
+- `GET /api/v1/jobs/{job_id}/audio`
+- `GET /api/v1/jobs/{job_id}/pdf`
 
 ### With a specific voice model
 
@@ -187,6 +203,8 @@ output/
 │   ├── my_paper_chunk_0001.txt
 │   └── ...
 ├── audio/                          ← Deleted automatically unless --keep-chunks
+├── alignment/
+│   └── my_paper_chunk_highlights.json  ← chunk→PDF highlight map
 └── final/
     ├── my_paper_merge_list.txt     ← FFmpeg concat list
     ├── my_paper_audiobook.wav      ← Uncompressed audiobook
@@ -197,8 +215,8 @@ output/
 
 ## How It Works
 
-### 1. PDF Extraction (Marker)
-Marker is specifically designed for academic PDFs and two-column layouts. It uses deep learning to detect reading order, handle column flow, and output clean structured markdown — far superior to simple PDF text extraction tools.
+### 1. PDF Extraction + Layout Filtering
+Marker extraction is combined with DocLayout-YOLO based filtering so narration focuses on readable body text and headings while suppressing many non-narrative regions.
 
 ### 2. Text Cleaning
 The extracted markdown is cleaned to remove:
@@ -217,6 +235,9 @@ Piper is called once per chunk via subprocess. Piper reads text from stdin and w
 
 ### 5. Audio Merging (FFmpeg)
 All chunk WAVs are concatenated using FFmpeg's `concat` demuxer (lossless, no re-encoding). The result is then optionally converted to MP3 using the LAME encoder.
+
+### 6. Chunk Highlight Mapping
+Each generated chunk is text-matched to PDF words (PyMuPDF) and stored as normalized polygons for stable PDF area highlighting in the client.
 
 ---
 
@@ -238,6 +259,10 @@ All chunk WAVs are concatenated using FFmpeg's `concat` demuxer (lossless, no re
 ### `Text is empty after cleaning`
 - The PDF may be entirely image-based (scanned without OCR). Marker's OCR mode may help.
 - Inspect the markdown file under `output/markdown/` to see what Marker extracted.
+
+### `Chunk highlighting seems missing`
+- Ensure you are using a newly processed job (highlights are generated per job).
+- Check `GET /api/v1/jobs/{job_id}/highlights` for payload presence.
 
 ### Audio sounds robotic or unnatural
 - Try a higher-quality model such as `en_US-libritts-high`.
@@ -272,3 +297,4 @@ This project is for personal, local use. Ensure you comply with the licenses of:
 - [Piper TTS](https://github.com/rhasspy/piper) – MIT
 - [FFmpeg](https://ffmpeg.org/) – LGPL/GPL
 - [NLTK](https://www.nltk.org/) – Apache 2.0
+- [DocLayout-YOLO](https://github.com/opendatalab/DocLayout-YOLO)

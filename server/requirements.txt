@@ -4,11 +4,9 @@ pymupdf
 
 # Text Processing
 nltk
-trafilatura
 huggingface_hub
 
-# Audio / Numeric
-numpy
+# Layout filtering
 doclayout-yolo
 
 # API
