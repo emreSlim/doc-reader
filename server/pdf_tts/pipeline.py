@@ -19,6 +19,7 @@ from .cleaner import clean_text
 from .chunker import chunk_text, save_chunks
 from .tts import generate_audio
 from .merger import merge_audio
+from .word_alignment import build_word_alignment
 from .utils import ensure_dirs
 from .validator import validate_dependencies
 from .logger import log
@@ -124,12 +125,26 @@ def run_pipeline(
     log.info("=" * 60)
 
     final_mp3 = dirs["final"] / f"{pdf_stem}_audiobook.mp3"
+
+    # 8 – Word alignment (timing + PDF word bboxes)
+    alignment_audio = final_mp3 if final_mp3.exists() else final_wav
+    alignment_payload, alignment_path = build_word_alignment(
+        pdf_path=pdf_path,
+        chunk_timing=chunk_timing,
+        output_dir=output_dir,
+        audio_path=alignment_audio,
+        extraction_metadata_path=get_extraction_metadata_path(md_path),
+    )
+
     return {
         "pdf_path": str(pdf_path),
         "extracted_path": str(md_path),
         "extraction_metadata_path": str(get_extraction_metadata_path(md_path)),
         "chunk_files": [str(path) for path in chunk_files],
         "chunk_timing": chunk_timing,
+        "word_alignment_path": str(alignment_path),
+        "aligned_word_count": alignment_payload.get("aligned_word_count", 0),
+        "alignment_timing_source": alignment_payload.get("timing_source", "estimated-chunk"),
         "final_wav": str(final_wav),
         "final_mp3": str(final_mp3) if final_mp3.exists() else None,
         "output_dir": str(output_dir),

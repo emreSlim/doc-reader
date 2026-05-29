@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { pollJob } from '../api'
-import type { ChunkTiming } from '../types'
+import { fetchAlignment, pollJob } from '../api'
+import type { ChunkTiming, WordAlignmentPayload } from '../types'
 
 interface Props {
   jobId: string
   fileName: string
-  onDone: (chunks: ChunkTiming[]) => void
+  onDone: (chunks: ChunkTiming[], alignment: WordAlignmentPayload | null) => void
   onError: () => void
 }
 
@@ -44,7 +44,14 @@ export default function ProcessingPage({ jobId, fileName, onDone, onError }: Pro
         const result = await pollJob(jobId)
         if (result.status === 'done') {
           clearInterval(poll)
-          onDone(result.chunk_timing ?? [])
+          let alignment: WordAlignmentPayload | null = null
+          try {
+            alignment = await fetchAlignment(jobId)
+          } catch (alignErr) {
+            console.warn('Alignment unavailable for job', jobId, alignErr)
+            alignment = null
+          }
+          onDone(result.chunk_timing ?? [], alignment)
         } else if (result.status === 'error') {
           clearInterval(poll)
           setError(result.error ?? 'Processing failed')

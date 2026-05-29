@@ -1,4 +1,4 @@
-import type { JobResult } from './types'
+import type { JobResult, WordAlignmentPayload } from './types'
 
 export async function uploadAndProcess(file: File): Promise<string> {
   const form = new FormData()
@@ -19,6 +19,12 @@ export async function pollJob(jobId: string): Promise<JobResult> {
   const res = await fetch(`/api/v1/jobs/${jobId}`)
   if (!res.ok) throw new Error(`Poll failed: ${await res.text()}`)
   return res.json() as Promise<JobResult>
+}
+
+export async function fetchAlignment(jobId: string): Promise<WordAlignmentPayload> {
+  const res = await fetch(`/api/v1/jobs/${jobId}/alignment`)
+  if (!res.ok) throw new Error(`Alignment fetch failed: ${await res.text()}`)
+  return res.json() as Promise<WordAlignmentPayload>
 }
 
 export function getAudioUrl(jobId: string): string {

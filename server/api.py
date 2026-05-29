@@ -218,9 +218,33 @@ def get_job(job_id: str):
         "job_id": job_id,
         "status": "done",
         "chunk_timing": result.get("chunk_timing", []),
+        "aligned_word_count": result.get("aligned_word_count", 0),
+        "word_alignment_path": result.get("word_alignment_path"),
+        "alignment_timing_source": result.get("alignment_timing_source", "estimated-chunk"),
         "has_mp3": bool(result.get("final_mp3")),
         "pdf_name": Path(result["pdf_path"]).name,
     }
+
+
+@app.get("/api/v1/jobs/{job_id}/alignment")
+def get_alignment(job_id: str):
+    """Return word-level alignment payload for precise PDF highlighting."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "done":
+        raise HTTPException(status_code=400, detail=f"Job not done (status: {job['status']})")
+
+    result = job["result"]
+    align_path_str = result.get("word_alignment_path")
+    if not align_path_str:
+        raise HTTPException(status_code=404, detail="No alignment path in result")
+
+    align_path = Path(align_path_str)
+    if not align_path.exists():
+        raise HTTPException(status_code=404, detail=f"Alignment file missing: {align_path}")
+
+    return JSONResponse(json.loads(align_path.read_text(encoding="utf-8")))
 
 
 @app.get("/api/v1/jobs/{job_id}/audio")

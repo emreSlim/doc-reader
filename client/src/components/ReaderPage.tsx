@@ -2,17 +2,38 @@ import { useMemo, useRef, useState } from 'react'
 import PdfViewer from './PdfViewer'
 import TextPanel from './TextPanel'
 import AudioPlayer from './AudioPlayer'
-import type { ChunkTiming } from '../types'
+import type { AlignedWord, ChunkTiming, WordAlignmentPayload } from '../types'
 
 interface Props {
   fileName: string
   chunkTiming: ChunkTiming[]
+  alignment: WordAlignmentPayload | null
   audioUrl: string
   pdfUrl: string
   onBack: () => void
 }
 
-export default function ReaderPage({ fileName, chunkTiming, audioUrl, pdfUrl, onBack }: Props) {
+function findActiveWord(words: AlignedWord[], currentTime: number): AlignedWord | null {
+  if (!words.length) return null
+  let lo = 0
+  let hi = words.length - 1
+  let best = -1
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (words[mid].start <= currentTime) {
+      best = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  if (best < 0) return null
+  const w = words[best]
+  if (currentTime >= w.start - 0.02 && currentTime <= w.end + 0.02) return w
+  return null
+}
+
+export default function ReaderPage({ fileName, chunkTiming, alignment, audioUrl, pdfUrl, onBack }: Props) {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -29,10 +50,10 @@ export default function ReaderPage({ fileName, chunkTiming, audioUrl, pdfUrl, on
     return active
   }, [chunkTiming, currentTime])
 
-  const activeChunkText =
-    activeChunkIndex >= 0 && activeChunkIndex < chunkTiming.length
-      ? chunkTiming[activeChunkIndex].text
-      : ''
+  const activeWord = useMemo(
+    () => findActiveWord(alignment?.words ?? [], currentTime),
+    [alignment, currentTime],
+  )
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
@@ -49,6 +70,8 @@ export default function ReaderPage({ fileName, chunkTiming, audioUrl, pdfUrl, on
         <span className="text-sm font-medium text-gray-200 truncate">{fileName}</span>
         <div className="ml-auto flex items-center gap-2 text-xs text-gray-500">
           {chunkTiming.length} chunks
+          <span>· {alignment?.words?.length ?? 0} aligned words</span>
+          <span>· {alignment?.timing_source ?? 'estimated-chunk'}</span>
           {duration > 0 && (
             <span>· {Math.round(duration / 60)}m audio</span>
           )}
@@ -61,7 +84,7 @@ export default function ReaderPage({ fileName, chunkTiming, audioUrl, pdfUrl, on
         <div className="w-[55%] border-r border-gray-800 overflow-y-auto bg-gray-900">
           <PdfViewer
             pdfUrl={pdfUrl}
-            activeChunkText={activeChunkText}
+            activeWord={activeWord}
           />
         </div>
 

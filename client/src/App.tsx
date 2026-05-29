@@ -2,7 +2,7 @@ import { useState } from 'react'
 import UploadPage from './components/UploadPage'
 import ProcessingPage from './components/ProcessingPage'
 import ReaderPage from './components/ReaderPage'
-import type { ChunkTiming } from './types'
+import type { ChunkTiming, WordAlignmentPayload } from './types'
 import { getAudioUrl, getPdfUrl } from './api'
 
 type AppState = 'upload' | 'processing' | 'reader'
@@ -12,6 +12,7 @@ export default function App() {
   const [jobId, setJobId] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
   const [chunkTiming, setChunkTiming] = useState<ChunkTiming[]>([])
+  const [alignment, setAlignment] = useState<WordAlignmentPayload | null>(null)
 
   const handleJobStarted = (id: string, name: string) => {
     setJobId(id)
@@ -19,8 +20,9 @@ export default function App() {
     setState('processing')
   }
 
-  const handleJobDone = (chunks: ChunkTiming[]) => {
+  const handleJobDone = (chunks: ChunkTiming[], aligned: WordAlignmentPayload | null) => {
     setChunkTiming(chunks)
+    setAlignment(aligned)
     setState('reader')
   }
 
@@ -28,6 +30,7 @@ export default function App() {
     setJobId(null)
     setFileName('')
     setChunkTiming([])
+    setAlignment(null)
     setState('upload')
   }
 
@@ -43,6 +46,7 @@ export default function App() {
         <ReaderPage
           fileName={fileName}
           chunkTiming={chunkTiming}
+          alignment={alignment}
           audioUrl={getAudioUrl(jobId)}
           pdfUrl={getPdfUrl(jobId)}
           onBack={handleReset}
