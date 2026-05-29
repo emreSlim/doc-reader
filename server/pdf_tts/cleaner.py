@@ -192,6 +192,8 @@ def clean_marker_text(text: str, remove_references: bool = True) -> str:
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)         # markdown links
     text = re.sub(r"\*{1,3}([^*\n]+)\*{1,3}", r"\1", text)           # bold/italic
     text = re.sub(r"_{1,3}([^_\n]+)_{1,3}", r"\1", text)               # bold/italic
+    text = re.sub(r"<\s*br\s*/?\s*>", "\n", text, flags=re.IGNORECASE)  # html <br>
+    text = re.sub(r"</?[^>]+>", "", text)                                 # other html tags
 
     # Convert markdown tables into pause-friendly narration lines.
     text = _convert_markdown_tables_for_tts(text)

@@ -138,14 +138,14 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
           </span>
         )}
         <button
-          onClick={() => goToPage(currentPageIndex - 1)}
+          onClick={() => goToPage(currentPageIndex - 1, true)}
           disabled={currentPageIndex === 0}
           className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           ← Prev page
         </button>
         <button
-          onClick={() => goToPage(currentPageIndex + 1)}
+          onClick={() => goToPage(currentPageIndex + 1, true)}
           disabled={currentPageIndex >= pages.length - 1}
           className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
