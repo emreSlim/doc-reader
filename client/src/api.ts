@@ -1,4 +1,5 @@
-import type { JobResult, WordAlignmentPayload } from './types'
+import { PDFDocument } from 'pdf-lib'
+import type { JobResult, PageJobResult, WordAlignmentPayload } from './types'
 
 export async function uploadAndProcess(file: File): Promise<string> {
   const form = new FormData()
@@ -15,10 +16,87 @@ export async function uploadAndProcess(file: File): Promise<string> {
   return data.job_id as string
 }
 
+async function splitPdfIntoSinglePageFiles(file: File): Promise<File[]> {
+  const inputBytes = await file.arrayBuffer()
+  const sourceDoc = await PDFDocument.load(inputBytes)
+  const pageCount = sourceDoc.getPageCount()
+  const pages: File[] = []
+
+  for (let i = 0; i < pageCount; i++) {
+    const pageDoc = await PDFDocument.create()
+    const [copiedPage] = await pageDoc.copyPages(sourceDoc, [i])
+    pageDoc.addPage(copiedPage)
+    const bytes = await pageDoc.save()
+    const byteCopy = new Uint8Array(bytes)
+    pages.push(new File([byteCopy], `${file.name.replace(/\.pdf$/i, '')}_page_${i + 1}.pdf`, { type: 'application/pdf' }))
+  }
+
+  return pages
+}
+
 export async function pollJob(jobId: string): Promise<JobResult> {
   const res = await fetch(`/api/v1/jobs/${jobId}`)
   if (!res.ok) throw new Error(`Poll failed: ${await res.text()}`)
   return res.json() as Promise<JobResult>
+}
+
+async function waitForJobDone(jobId: string, intervalMs: number = 3000): Promise<JobResult> {
+  while (true) {
+    const result = await pollJob(jobId)
+    if (result.status === 'done') return result
+    if (result.status === 'error') {
+      throw new Error(result.error ?? `Page job failed: ${jobId}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+}
+
+export interface PageProcessProgress {
+  pageIndex: number
+  pageCount: number
+  phase: 'splitting' | 'uploading' | 'processing' | 'alignment' | 'done'
+  jobId?: string
+}
+
+export async function processPdfPagesSequentially(
+  file: File,
+  onProgress?: (p: PageProcessProgress) => void,
+  onPageDone?: (page: PageJobResult) => void,
+): Promise<PageJobResult[]> {
+  onProgress?.({ pageIndex: 0, pageCount: 0, phase: 'splitting' })
+  const pageFiles = await splitPdfIntoSinglePageFiles(file)
+  const total = pageFiles.length
+  const results: PageJobResult[] = []
+
+  for (let i = 0; i < total; i++) {
+    const pageFile = pageFiles[i]
+    onProgress?.({ pageIndex: i, pageCount: total, phase: 'uploading' })
+    const jobId = await uploadAndProcess(pageFile)
+
+    onProgress?.({ pageIndex: i, pageCount: total, phase: 'processing', jobId })
+    const done = await waitForJobDone(jobId)
+
+    onProgress?.({ pageIndex: i, pageCount: total, phase: 'alignment', jobId })
+    let alignment: WordAlignmentPayload | null = null
+    try {
+      alignment = await fetchAlignment(jobId)
+    } catch {
+      alignment = null
+    }
+
+    const pageResult: PageJobResult = {
+      pageIndex: i,
+      pageNumber: i + 1,
+      jobId,
+      chunkTiming: done.chunk_timing ?? [],
+      alignment,
+    }
+    results.push(pageResult)
+    onPageDone?.(pageResult)
+  }
+
+  onProgress?.({ pageIndex: total - 1, pageCount: total, phase: 'done', jobId: results[total - 1]?.jobId })
+  return results
 }
 
 export async function fetchAlignment(jobId: string): Promise<WordAlignmentPayload> {

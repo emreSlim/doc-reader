@@ -44,3 +44,11 @@ export interface JobResult {
   has_mp3: boolean
   pdf_name: string
 }
+
+export interface PageJobResult {
+  pageIndex: number
+  pageNumber: number
+  jobId: string
+  chunkTiming: ChunkTiming[]
+  alignment: WordAlignmentPayload | null
+}

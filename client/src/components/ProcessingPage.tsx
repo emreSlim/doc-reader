@@ -1,35 +1,42 @@
-import { useEffect, useState } from 'react'
-import { fetchAlignment, pollJob } from '../api'
-import type { ChunkTiming, WordAlignmentPayload } from '../types'
+import { useEffect, useMemo, useState } from 'react'
+import type { PageProcessProgress } from '../api'
 
 interface Props {
-  jobId: string
   fileName: string
-  onDone: (chunks: ChunkTiming[], alignment: WordAlignmentPayload | null) => void
+  progress: PageProcessProgress | null
+  error: string | null
   onError: () => void
 }
 
 const STAGES = [
-  'Extracting text from PDF…',
-  'Detecting layout regions…',
-  'Cleaning and chunking text…',
-  'Generating audio with Piper TTS…',
-  'Merging audio tracks…',
-  'Almost done…',
+  'Splitting PDF into pages…',
+  'Uploading current page…',
+  'Processing current page…',
+  'Fetching alignment…',
+  'Finalizing…',
 ]
 
-export default function ProcessingPage({ jobId, fileName, onDone, onError }: Props) {
-  const [stageIndex, setStageIndex] = useState(0)
-  const [error, setError] = useState<string | null>(null)
-  const [elapsed, setElapsed] = useState(0)
+function stageFromProgress(progress: PageProcessProgress | null): number {
+  if (!progress) return 0
+  switch (progress.phase) {
+    case 'splitting':
+      return 0
+    case 'uploading':
+      return 1
+    case 'processing':
+      return 2
+    case 'alignment':
+      return 3
+    case 'done':
+      return 4
+    default:
+      return 0
+  }
+}
 
-  // Cycle through stage labels every ~8 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setStageIndex((i) => Math.min(i + 1, STAGES.length - 1))
-    }, 8000)
-    return () => clearInterval(interval)
-  }, [])
+export default function ProcessingPage({ fileName, progress, error, onError }: Props) {
+  const [stageIndex, setStageIndex] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
 
   // Elapsed time counter
   useEffect(() => {
@@ -37,35 +44,23 @@ export default function ProcessingPage({ jobId, fileName, onDone, onError }: Pro
     return () => clearInterval(tick)
   }, [])
 
-  // Poll job status
   useEffect(() => {
-    const poll = setInterval(async () => {
-      try {
-        const result = await pollJob(jobId)
-        if (result.status === 'done') {
-          clearInterval(poll)
-          let alignment: WordAlignmentPayload | null = null
-          try {
-            alignment = await fetchAlignment(jobId)
-          } catch (alignErr) {
-            console.warn('Alignment unavailable for job', jobId, alignErr)
-            alignment = null
-          }
-          onDone(result.chunk_timing ?? [], alignment)
-        } else if (result.status === 'error') {
-          clearInterval(poll)
-          setError(result.error ?? 'Processing failed')
-        }
-      } catch (err) {
-        clearInterval(poll)
-        setError(err instanceof Error ? err.message : 'Network error')
-      }
-    }, 3000)
-    return () => clearInterval(poll)
-  }, [jobId, onDone])
+    setStageIndex(stageFromProgress(progress))
+  }, [progress])
 
   const mins = Math.floor(elapsed / 60)
   const secs = elapsed % 60
+  const totalPages = progress?.pageCount ?? 0
+  const completedPages = progress?.phase === 'done'
+    ? (progress.pageCount ?? 0)
+    : progress
+    ? progress.pageIndex
+    : 0
+  const pageLabel = useMemo(() => {
+    if (!progress || !progress.pageCount) return 'Preparing pages...'
+    if (progress.phase === 'done') return `Completed ${progress.pageCount}/${progress.pageCount} pages`
+    return `Page ${progress.pageIndex + 1}/${progress.pageCount}`
+  }, [progress])
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
@@ -114,11 +109,23 @@ export default function ProcessingPage({ jobId, fileName, onDone, onError }: Pro
             </div>
 
             <p className="text-indigo-300 text-sm font-medium">{STAGES[stageIndex]}</p>
+            <p className="text-gray-400 text-xs mt-2">{pageLabel}</p>
+            {totalPages > 0 && (
+              <div className="mt-3">
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-2 bg-indigo-500"
+                    style={{ width: `${Math.min(100, (completedPages / totalPages) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <p className="text-gray-600 text-xs mt-3">
-              {mins > 0 ? `${mins}m ` : ''}{secs}s elapsed · TTS generation can take a few minutes
+              {mins > 0 ? `${mins}m ` : ''}{secs}s elapsed · processing pages one-by-one
             </p>
-
-            <p className="text-gray-700 text-xs mt-6 font-mono">Job: {jobId.slice(0, 8)}…</p>
+            {progress?.jobId && (
+              <p className="text-gray-700 text-xs mt-6 font-mono">Job: {progress.jobId.slice(0, 8)}…</p>
+            )}
           </>
         )}
       </div>

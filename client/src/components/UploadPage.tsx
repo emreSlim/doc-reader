@@ -1,14 +1,12 @@
 import { useCallback, useState } from 'react'
-import { uploadAndProcess } from '../api'
 
 interface Props {
-  onJobStarted: (jobId: string, fileName: string) => void
+  onStartProcessing: (file: File) => void
 }
 
-export default function UploadPage({ onJobStarted }: Props) {
+export default function UploadPage({ onStartProcessing }: Props) {
   const [isDragging, setIsDragging] = useState(false)
   const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const acceptFile = (f: File) => {
@@ -34,15 +32,8 @@ export default function UploadPage({ onJobStarted }: Props) {
 
   const handleSubmit = async () => {
     if (!file) return
-    setLoading(true)
     setError(null)
-    try {
-      const jobId = await uploadAndProcess(file)
-      onJobStarted(jobId, file.name)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
-      setLoading(false)
-    }
+    onStartProcessing(file)
   }
 
   return (
@@ -105,36 +96,17 @@ export default function UploadPage({ onJobStarted }: Props) {
 
         {/* Submit */}
         <button
-          disabled={!file || loading}
+          disabled={!file}
           onClick={handleSubmit}
           className={`mt-6 w-full py-3 rounded-xl font-semibold text-white transition-all ${
-            !file || loading
+            !file
               ? 'bg-gray-700 cursor-not-allowed opacity-50'
               : 'bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98]'
           }`}
         >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <Spinner /> Uploading…
-            </span>
-          ) : (
-            'Generate Audio & Open Reader'
-          )}
+          Split by pages & Process Sequentially
         </button>
       </div>
     </div>
-  )
-}
-
-function Spinner() {
-  return (
-    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v8z"
-      />
-    </svg>
   )
 }

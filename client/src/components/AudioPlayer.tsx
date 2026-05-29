@@ -9,6 +9,7 @@ interface Props {
   onTimeUpdate: (t: number) => void
   onDurationChange: (d: number) => void
   onPlayStateChange: (playing: boolean) => void
+  onEnded?: () => void
 }
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2] as const
@@ -22,6 +23,7 @@ export default function AudioPlayer({
   onTimeUpdate,
   onDurationChange,
   onPlayStateChange,
+  onEnded,
 }: Props) {
   const [speed, setSpeed] = useState(1)
   const seeking = useRef(false)
@@ -35,7 +37,9 @@ export default function AudioPlayer({
     const audio = audioRef.current
     if (!audio) return
     if (audio.paused) {
-      audio.play()
+      audio.play().catch(() => {
+        // Browser autoplay policy can reject programmatic play.
+      })
     } else {
       audio.pause()
     }
@@ -69,7 +73,10 @@ export default function AudioPlayer({
         onLoadedMetadata={() => audioRef.current && onDurationChange(audioRef.current.duration)}
         onPlay={() => onPlayStateChange(true)}
         onPause={() => onPlayStateChange(false)}
-        onEnded={() => onPlayStateChange(false)}
+        onEnded={() => {
+          onPlayStateChange(false)
+          onEnded?.()
+        }}
       />
 
       {/* Skip back 10s */}
