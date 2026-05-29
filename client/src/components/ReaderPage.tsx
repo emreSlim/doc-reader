@@ -24,6 +24,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
   const [isPlaying, setIsPlaying] = useState(false)
   const [showTextPanel, setShowTextPanel] = useState(true)
   const autoPlayPendingRef = useRef(false)
+  const pendingChunkSeekRef = useRef<number | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const totalUploadedPages = progress?.pageCount && progress.pageCount > 0 ? progress.pageCount : pages.length
 
@@ -99,8 +100,24 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
     setCurrentTime(target.start)
   }
 
-  const canGoToPrevBlock = activeChunkIndex > 0
-  const canGoToNextBlock = activeChunkIndex >= 0 && activeChunkIndex < chunkTiming.length - 1
+  useEffect(() => {
+    const pendingIdx = pendingChunkSeekRef.current
+    if (pendingIdx == null) return
+    if (!chunkTiming.length || !audioRef.current) return
+
+    const clamped = Math.max(0, Math.min(chunkTiming.length - 1, pendingIdx))
+    const target = chunkTiming[clamped]
+    if (!target) return
+
+    audioRef.current.currentTime = target.start
+    setCurrentTime(target.start)
+    pendingChunkSeekRef.current = null
+  }, [chunkTiming])
+
+  const prevPageChunkCount = currentPageIndex > 0 ? (pages[currentPageIndex - 1]?.chunkTiming?.length ?? 0) : 0
+  const nextPageChunkCount = currentPageIndex < pages.length - 1 ? (pages[currentPageIndex + 1]?.chunkTiming?.length ?? 0) : 0
+  const canGoToPrevBlock = activeChunkIndex > 0 || prevPageChunkCount > 0
+  const canGoToNextBlock = (activeChunkIndex >= 0 && activeChunkIndex < chunkTiming.length - 1) || nextPageChunkCount > 0
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
@@ -192,10 +209,30 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
           canGoToPrevBlock={canGoToPrevBlock}
           canGoToNextBlock={canGoToNextBlock}
           onPrevBlock={() => {
-            if (canGoToPrevBlock) seekToChunk(activeChunkIndex - 1)
+            if (activeChunkIndex > 0) {
+              seekToChunk(activeChunkIndex - 1)
+              return
+            }
+
+            if (currentPageIndex <= 0) return
+            const prevChunks = pages[currentPageIndex - 1]?.chunkTiming ?? []
+            if (!prevChunks.length) return
+
+            pendingChunkSeekRef.current = prevChunks.length - 1
+            goToPage(currentPageIndex - 1, true)
           }}
           onNextBlock={() => {
-            if (canGoToNextBlock) seekToChunk(activeChunkIndex + 1)
+            if (activeChunkIndex >= 0 && activeChunkIndex < chunkTiming.length - 1) {
+              seekToChunk(activeChunkIndex + 1)
+              return
+            }
+
+            if (currentPageIndex >= pages.length - 1) return
+            const nextChunks = pages[currentPageIndex + 1]?.chunkTiming ?? []
+            if (!nextChunks.length) return
+
+            pendingChunkSeekRef.current = 0
+            goToPage(currentPageIndex + 1, true)
           }}
           onTimeUpdate={setCurrentTime}
           onDurationChange={setDuration}
