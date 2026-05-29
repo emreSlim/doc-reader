@@ -3,9 +3,9 @@ pdf_tts/validator.py
 --------------------
 Pre-flight dependency checks.
 
-Validates that all required external tools (FFmpeg, piper.exe) and
-model files are present before the pipeline starts, giving the user
-clear, actionable error messages instead of cryptic OS errors.
+Validates that all required external tools (FFmpeg) and model files are
+present before the pipeline starts, giving the user clear, actionable
+error messages instead of cryptic OS errors.
 """
 
 import os
@@ -50,7 +50,7 @@ def _ensure_ffmpeg() -> bool:
     return False
 
 
-def validate_dependencies(piper_exe: Path, model_path: Path) -> None:
+def validate_dependencies(model_path: Path) -> None:
     """
     Check all external dependencies before the pipeline runs.
 
@@ -66,13 +66,6 @@ def validate_dependencies(piper_exe: Path, model_path: Path) -> None:
             "  -> Download from https://ffmpeg.org/download.html\n"
             "  -> Extract and add the bin/ folder to your System PATH\n"
             "  -> Then open a new terminal and verify with: ffmpeg -version"
-        )
-
-    # ── piper.exe ────────────────────────────────────────────────────────────
-    if not piper_exe.exists():
-        errors.append(
-            f"piper.exe not found at: {piper_exe}\n"
-            "  -> Download from https://github.com/rhasspy/piper/releases"
         )
 
     # ── Piper model ──────────────────────────────────────────────────────────

@@ -10,8 +10,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Default paths
 # ---------------------------------------------------------------------------
-DEFAULT_MODEL_PATH = Path("piper/models/en_US-amy-medium.onnx")
-DEFAULT_PIPER_EXE  = Path("piper/piper.exe")
+DEFAULT_MODEL_PATH = Path("piper_models/models/en_US-amy-medium.onnx")
 DEFAULT_OUTPUT_DIR = Path("output")
 
 # ---------------------------------------------------------------------------

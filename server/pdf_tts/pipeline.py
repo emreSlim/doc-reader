@@ -37,7 +37,6 @@ def _get_wav_duration(path: Path) -> float:
 def run_pipeline(
     pdf_path: Path,
     model_path: Path,
-    piper_exe: Path,
     output_dir: Path,
     generate_mp3: bool = True,
     keep_chunks: bool = False,
@@ -50,7 +49,6 @@ def run_pipeline(
     Args:
         pdf_path:          Path to the input PDF file.
         model_path:        Path to the Piper .onnx voice model.
-        piper_exe:         Path to piper.exe.
         output_dir:        Root directory for all output files.
         generate_mp3:      Also produce an MP3 alongside the final WAV.
         keep_chunks:       Retain intermediate per-chunk WAV files.
@@ -71,7 +69,7 @@ def run_pipeline(
 
     # 1 – Pre-flight checks
     log.debug("[pipeline] Stage 1: validating dependencies...")
-    validate_dependencies(piper_exe=piper_exe, model_path=model_path)
+    validate_dependencies(model_path=model_path)
 
     # 2 – Create output directories
     log.debug("[pipeline] Stage 2: creating output dirs at %s", output_dir)
@@ -102,7 +100,6 @@ def run_pipeline(
         chunks=chunks,
         audio_dir=dirs["audio"],
         pdf_stem=pdf_stem,
-        piper_exe=piper_exe,
         model_path=model_path,
     )
     log.debug("[pipeline] Stage 6 done in %.1fs | %d WAVs generated", _time.perf_counter() - _t0, len(audio_files))

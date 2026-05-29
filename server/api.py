@@ -25,7 +25,6 @@ from pdf_tts.config import (
     CHUNK_TARGET_CHARS,
     DEFAULT_MODEL_PATH,
     DEFAULT_OUTPUT_DIR,
-    DEFAULT_PIPER_EXE,
 )
 from pdf_tts.extractor import extract_pdf, get_extraction_metadata_path, read_markdown
 from pdf_tts.logger import log
@@ -93,25 +92,23 @@ def _run_pipeline_bg(
     job_id: str,
     pdf: Path,
     model: Path,
-    piper: Path,
     out_root: Path,
     generate_mp3: bool,
     remove_references: bool,
     chunk_size: int,
 ) -> None:
     log.debug(
-        "[job:%s] Pipeline thread started | pdf=%s model=%s piper=%s out=%s "
+        "[job:%s] Pipeline thread started | pdf=%s model=%s out=%s "
         "mp3=%s remove_refs=%s chunk_size=%d",
-        job_id, pdf.name, model.name, piper.name, out_root,
+        job_id, pdf.name, model.name, out_root,
         generate_mp3, remove_references, chunk_size,
     )
     try:
-        validate_dependencies(piper_exe=piper, model_path=model)
+        validate_dependencies(model_path=model)
         log.debug("[job:%s] Dependencies validated.", job_id)
         result = run_pipeline(
             pdf_path=pdf,
             model_path=model,
-            piper_exe=piper,
             output_dir=out_root,
             generate_mp3=generate_mp3,
             keep_chunks=True,
@@ -181,7 +178,6 @@ async def process_endpoint(
     generate_mp3: bool = Form(default=True),
     output_dir: str = Form(default=str(DEFAULT_OUTPUT_DIR)),
     model_path: str = Form(default=str(DEFAULT_MODEL_PATH)),
-    piper_exe: str = Form(default=str(DEFAULT_PIPER_EXE)),
 ):
     """
     Upload a PDF and start the TTS pipeline as a background job.
@@ -196,10 +192,6 @@ async def process_endpoint(
     model = Path(model_path)
     if not model.is_absolute():
         model = (WORKSPACE_ROOT / model).resolve()
-
-    piper = Path(piper_exe)
-    if not piper.is_absolute():
-        piper = (WORKSPACE_ROOT / piper).resolve()
 
     job_id = str(uuid.uuid4())
     _jobs[job_id] = {
@@ -216,7 +208,7 @@ async def process_endpoint(
 
     t = threading.Thread(
         target=_run_pipeline_bg,
-        args=(job_id, pdf, model, piper, out_root, generate_mp3, remove_references, chunk_size),
+        args=(job_id, pdf, model, out_root, generate_mp3, remove_references, chunk_size),
         daemon=True,
         name=f"pipeline-{job_id[:8]}",
     )

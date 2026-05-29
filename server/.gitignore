@@ -1,5 +1,5 @@
 .venv/
-piper/
+piper_models/
 input/
 output/
 */__pycache__/*

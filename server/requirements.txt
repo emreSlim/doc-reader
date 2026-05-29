@@ -14,5 +14,7 @@ fastapi
 uvicorn
 python-multipart
 
+# TTS
+piper-tts
+
 # FFmpeg is required as a system install (https://ffmpeg.org/download.html)
-# Piper TTS is required as a standalone binary (https://github.com/rhasspy/piper/releases)

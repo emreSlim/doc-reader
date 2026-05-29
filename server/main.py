@@ -17,7 +17,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from pdf_tts.config import DEFAULT_MODEL_PATH, DEFAULT_PIPER_EXE, DEFAULT_OUTPUT_DIR, CHUNK_TARGET_CHARS
+from pdf_tts.config import DEFAULT_MODEL_PATH, DEFAULT_OUTPUT_DIR, CHUNK_TARGET_CHARS
 from pdf_tts.pipeline import run_pipeline
 
 
@@ -32,13 +32,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_MODEL_PATH,
         help=f"Path to Piper .onnx model  (default: {DEFAULT_MODEL_PATH})",
-    )
-    parser.add_argument(
-        "--piper",
-        type=Path,
-        default=DEFAULT_PIPER_EXE,
-        dest="piper_exe",
-        help=f"Path to piper.exe  (default: {DEFAULT_PIPER_EXE})",
     )
     parser.add_argument(
         "--output-dir",
@@ -83,7 +76,6 @@ def main() -> None:
         run_pipeline(
             pdf_path=args.pdf,
             model_path=args.model,
-            piper_exe=args.piper_exe,
             output_dir=args.output_dir,
             generate_mp3=not args.no_mp3,
             keep_chunks=args.keep_chunks,

@@ -25,12 +25,10 @@ tts-reader/
 │   ├── audio/                      ← Intermediate per-chunk WAV files
 │   └── final/                      ← Final merged audiobook (WAV + MP3)
 │
-├── piper/
-│   ├── piper.exe                   ← Piper TTS binary (Windows)
-│   ├── models/
-│   │   ├── en_US-amy-medium.onnx
-│   │   └── en_US-amy-medium.onnx.json
-│   └── espeak-ng-data/             ← Required by Piper (included with release)
+├── piper_models/
+│   └── models/
+│       ├── en_US-amy-medium.onnx
+│       └── en_US-amy-medium.onnx.json
 │
 ├── api.py                          ← FastAPI server (used by client)
 ├── main.py                         ← Optional CLI entrypoint
@@ -48,7 +46,6 @@ tts-reader/
 |---|---|---|
 | Python | 3.11+ | [python.org](https://www.python.org/downloads/) |
 | FFmpeg | Latest | [ffmpeg.org](https://ffmpeg.org/download.html) |
-| Piper TTS | Latest | [GitHub Releases](https://github.com/rhasspy/piper/releases) |
 
 ### Python Packages
 
@@ -83,20 +80,13 @@ pip install -r requirements.txt
    - Add `C:\ffmpeg\bin`
 4. Verify: open a new terminal and run `ffmpeg -version`
 
-### Step 4 – Download Piper TTS
-
-1. Go to [https://github.com/rhasspy/piper/releases](https://github.com/rhasspy/piper/releases)
-2. Download the **Windows AMD64** release (e.g. `piper_windows_amd64.zip`)
-3. Extract all contents into the `piper/` folder inside this project
-4. You should now have `piper/piper.exe` and `piper/espeak-ng-data/`
-
-### Step 5 – Download a Piper voice model
+### Step 4 – Download a Piper voice model
 
 1. Browse voices at [https://github.com/rhasspy/piper/releases](https://github.com/rhasspy/piper/releases) or [https://huggingface.co/rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)
 2. Download a model pair, e.g.:
    - `en_US-amy-medium.onnx`
    - `en_US-amy-medium.onnx.json`
-3. Place **both files** into `piper/models/`
+3. Place **both files** into `piper_models/models/`
 
 Recommended voices for audiobook narration:
 - `en_US-amy-medium` – clear, natural female voice
@@ -169,7 +159,7 @@ python main.py input/my_paper.pdf --chunk-size 300
 ### All options
 
 ```
-usage: main.py [-h] [--model MODEL] [--piper PIPER_EXE]
+usage: main.py [-h] [--model MODEL]
                [--output-dir OUTPUT_DIR] [--no-mp3] [--keep-chunks]
                [--keep-references] [--chunk-size CHUNK_SIZE]
                pdf
