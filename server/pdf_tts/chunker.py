@@ -138,27 +138,8 @@ def chunk_text(
     units = _build_paragraph_units(text, max_chars=max_chars)
     log.info("Prepared %d paragraph-aware speech units.", len(units))
 
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
-
-    for unit in units:
-        unit = unit.strip()
-        if not unit:
-            continue
-
-        separator_len = 2 if current else 0  # account for "\n\n"
-        if current_len + len(unit) + separator_len > target_chars and current:
-            chunks.append("\n\n".join(current))
-            current, current_len = [], 0
-
-        current.append(unit)
-        current_len += len(unit) + separator_len
-
-    if current:
-        chunks.append("\n\n".join(current))
-
-    chunks = [c.strip() for c in chunks if c.strip()]
+    # Each blank-line-separated block in the markdown becomes its own chunk.
+    chunks = [u.strip() for u in units if u.strip()]
     log.info("Created %d text chunks.", len(chunks))
     return chunks
 
