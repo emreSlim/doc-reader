@@ -14,11 +14,20 @@ import sys
 import time
 import re
 import json
+import os
 from pathlib import Path
 from typing import List
 
 from .layout_filter import block_is_kept_by_layout, detect_layout_regions
 from .logger import log
+
+
+# ---------------------------------------------------------------------------
+# Marker performance tuning
+# ---------------------------------------------------------------------------
+# Disable OCR for faster text-only extraction on native PDFs.
+# Maps to marker_single flag: --disable_ocr
+MARKER_DISABLE_OCR = True
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +319,9 @@ def extract_pdf_marker(pdf_path: Path, markdown_dir: Path) -> Path:
 
     marker_cmd = _find_marker_cmd()
     cmd = [marker_cmd, str(pdf_path), "--output_dir", str(markdown_dir)]
+    if MARKER_DISABLE_OCR:
+        cmd.append("--disable_ocr")
+        log.info("Marker OCR disabled (--disable_ocr): text extraction only")
     log.info("Running Marker: %s", " ".join(cmd))
 
     result = subprocess.run(
