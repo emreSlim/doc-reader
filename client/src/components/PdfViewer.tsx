@@ -23,9 +23,29 @@ export default function PdfViewer({ pdfUrl, activeWord }: Props) {
 
   useEffect(() => {
     if (!activeWord || !rootRef.current) return
-    const pageEl = rootRef.current.querySelector(`[data-page="${activeWord.page_index + 1}"]`)
-    if (pageEl instanceof HTMLElement) {
-      pageEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+
+    // Scroll only when highlight is near/outside viewport bounds.
+    // This avoids constant page recentering on every word.
+    const scrollContainer = rootRef.current.parentElement
+    if (!(scrollContainer instanceof HTMLElement)) return
+
+    const marker = rootRef.current.querySelector('[data-active-word="true"]')
+    if (!(marker instanceof HTMLElement)) return
+
+    const cRect = scrollContainer.getBoundingClientRect()
+    const mRect = marker.getBoundingClientRect()
+    const topMargin = 90
+    const bottomMargin = 130
+
+    if (mRect.top < cRect.top + topMargin) {
+      const delta = (cRect.top + topMargin) - mRect.top
+      scrollContainer.scrollBy({ top: -delta, behavior: 'smooth' })
+      return
+    }
+
+    if (mRect.bottom > cRect.bottom - bottomMargin) {
+      const delta = mRect.bottom - (cRect.bottom - bottomMargin)
+      scrollContainer.scrollBy({ top: delta, behavior: 'smooth' })
     }
   }, [activeWord])
 
@@ -62,6 +82,7 @@ export default function PdfViewer({ pdfUrl, activeWord }: Props) {
               {activeWord && activeWord.page_index === i && (
                 <div className="absolute inset-0 pointer-events-none z-20">
                   <div
+                    data-active-word="true"
                     style={{
                       position: 'absolute',
                       left: `${activeWord.bbox_norm[0] * 100}%`,
