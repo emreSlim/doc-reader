@@ -72,16 +72,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="chunk_size",
         help=f"Target chunk size in characters  (default: {CHUNK_TARGET_CHARS})",
     )
-    parser.add_argument(
-        "--fast",
-        action="store_true",
-        default=False,
-        help=(
-            "Use pdftext for extraction instead of Marker. "
-            "Near-instant for born-digital PDFs (research papers, articles). "
-            "Not suitable for scanned/image-only PDFs."
-        ),
-    )
     return parser
 
 
@@ -99,7 +89,6 @@ def main() -> None:
             keep_chunks=args.keep_chunks,
             remove_references=not args.keep_references,
             chunk_size=args.chunk_size,
-            fast=args.fast,
         )
     except FileNotFoundError as exc:
         print(f"ERROR – File not found: {exc}", file=sys.stderr)

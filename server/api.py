@@ -16,11 +16,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from pdf_tts.cleaner import clean_text
+from pdf_tts.cleaner import clean_marker_text
 from pdf_tts.config import (
     CHUNK_TARGET_CHARS,
     DEFAULT_MODEL_PATH,
@@ -102,13 +102,12 @@ def _run_pipeline_bg(
     generate_mp3: bool,
     remove_references: bool,
     chunk_size: int,
-    fast: bool,
 ) -> None:
     log.debug(
         "[job:%s] Pipeline thread started | pdf=%s model=%s piper=%s out=%s "
-        "mp3=%s remove_refs=%s chunk_size=%d fast=%s",
+        "mp3=%s remove_refs=%s chunk_size=%d",
         job_id, pdf.name, model.name, piper.name, out_root,
-        generate_mp3, remove_references, chunk_size, fast,
+        generate_mp3, remove_references, chunk_size,
     )
     try:
         validate_dependencies(piper_exe=piper, model_path=model)
@@ -122,7 +121,6 @@ def _run_pipeline_bg(
             keep_chunks=True,
             remove_references=remove_references,
             chunk_size=chunk_size,
-            fast=fast,
         )
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["result"] = result
@@ -149,7 +147,6 @@ def health() -> dict:
 async def extract_endpoint(
     pdf_path: str | None = Form(default=None),
     file: UploadFile | None = File(default=None),
-    fast: bool = Form(default=True),
     remove_references: bool = Form(default=True),
     output_dir: str = Form(default=str(DEFAULT_OUTPUT_DIR)),
 ):
@@ -159,9 +156,9 @@ async def extract_endpoint(
         out_root = (WORKSPACE_ROOT / out_root).resolve()
 
     dirs = ensure_dirs(out_root)
-    extracted_path = extract_pdf(pdf, dirs["markdown"], fast=fast)
+    extracted_path = extract_pdf(pdf, dirs["markdown"])
     raw_text = read_markdown(extracted_path)
-    cleaned_text = clean_text(raw_text, remove_references=remove_references)
+    cleaned_text = clean_marker_text(raw_text, remove_references=remove_references)
 
     metadata_path = get_extraction_metadata_path(extracted_path)
     metadata = None
@@ -171,7 +168,6 @@ async def extract_endpoint(
     return JSONResponse(
         {
             "pdf_path": str(pdf),
-            "fast": fast,
             "extracted_path": str(extracted_path),
             "extraction_metadata_path": str(metadata_path) if metadata_path.exists() else None,
             "cleaned_text": cleaned_text,
@@ -185,7 +181,6 @@ async def extract_endpoint(
 async def process_endpoint(
     pdf_path: Optional[str] = Form(default=None),
     file: Optional[UploadFile] = File(default=None),
-    fast: bool = Form(default=True),
     remove_references: bool = Form(default=True),
     chunk_size: int = Form(default=CHUNK_TARGET_CHARS),
     generate_mp3: bool = Form(default=True),
@@ -220,14 +215,14 @@ async def process_endpoint(
     }
     log.info("Started job %s for PDF: %s", job_id, pdf.name)
     log.debug(
-        "[job:%s] Params | fast=%s remove_refs=%s chunk_size=%d mp3=%s model=%s",
-        job_id, fast, remove_references, chunk_size, generate_mp3, model.name,
+        "[job:%s] Params | remove_refs=%s chunk_size=%d mp3=%s model=%s",
+        job_id, remove_references, chunk_size, generate_mp3, model.name,
     )
 
     _executor.submit(
         _run_pipeline_bg,
         job_id, pdf, model, piper, out_root,
-        generate_mp3, remove_references, chunk_size, fast,
+        generate_mp3, remove_references, chunk_size,
     )
 
     return {"job_id": job_id, "status": "processing"}

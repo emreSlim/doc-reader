@@ -3,18 +3,9 @@ pdf_tts/extractor.py
 --------------------
 PDF → Markdown/text extraction.
 
-Two extraction modes are supported:
-
-  Fast mode  (--fast, default for digital PDFs)
-    Uses pdftext to pull text directly from the PDF's embedded character
-    stream, with column-aware reading order.
-    Typical speed: < 1 second per document.
-    Use this for: born-digital PDFs, research papers, articles.
-
-  Full mode  (default without --fast)
-    Uses Marker (surya ML models) for layout detection, OCR, and ordering.
-    Typical speed: 5–15 minutes on CPU per document.
-    Use this for: scanned PDFs, complex tables, image-heavy documents.
+This module uses Marker for extraction, layout detection, OCR, and reading
+order reconstruction. It is slower than simple text extraction, but produces
+better results for scanned PDFs and mixed-layout documents.
 """
 
 import shutil
@@ -258,94 +249,6 @@ def _extract_text_from_pages(
 
 
 # ---------------------------------------------------------------------------
-# Fast extraction via pdftext
-# ---------------------------------------------------------------------------
-
-def extract_pdf_fast(pdf_path: Path, markdown_dir: Path) -> Path:
-    """
-    Extract text from a born-digital PDF using pdftext (no ML models).
-
-    Uses column-aware block sorting to correctly handle single-column,
-    two-column, and mixed-layout PDFs.
-
-    Args:
-        pdf_path:     Path to the input PDF.
-        markdown_dir: Root directory for extracted text output.
-
-    Returns:
-        Path to the written .txt file.
-
-    Raises:
-        FileNotFoundError – PDF not found.
-        ImportError       – pdftext not installed.
-        ValueError        – Extracted text is empty.
-    """
-    pdf_path = pdf_path.resolve()
-    if not pdf_path.exists():
-        raise FileNotFoundError(f"PDF not found: {pdf_path}")
-
-    try:
-        from pdftext.extraction import dictionary_output
-    except ImportError:
-        raise ImportError(
-            "pdftext is not installed.\n"
-            "Install it with: pip install pdftext\n"
-            "Or omit --fast to use Marker instead."
-        )
-
-    pdf_stem = pdf_path.stem
-    out_dir = markdown_dir / pdf_stem
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{pdf_stem}.txt"
-    meta_file = _metadata_path_for_text(out_file)
-
-    # Fast-path: already extracted
-    if out_file.exists() and meta_file.exists():
-        log.info("Text already exists, skipping fast extraction: %s", out_file)
-        return out_file
-
-    log.info("Fast extraction (pdftext + DocLayout-YOLO) for: %s", pdf_path.name)
-
-    t0 = time.time()
-    pages = dictionary_output(str(pdf_path), sort=False)  # we do our own sorting
-    layout_regions_by_page = detect_layout_regions(pdf_path)
-    text, metadata = _extract_text_from_pages(
-        pages,
-        layout_regions_by_page=layout_regions_by_page,
-    )
-    elapsed = time.time() - t0
-
-    # Fix hyphenated line-breaks (e.g. "informa-\ntion" -> "information")
-    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
-
-    if not text.strip():
-        raise ValueError(
-            f"pdftext extracted empty text from: {pdf_path}\n"
-            "The PDF may be scanned or image-based. Try without --fast to use Marker with OCR."
-        )
-
-    out_file.write_text(text, encoding="utf-8")
-    meta_file.write_text(
-        json.dumps(
-            {
-                "source_pdf": str(pdf_path),
-                "mode": "fast-layout",
-                "layout_model": "DocLayout-YOLO-DocStructBench",
-                "text_path": str(out_file),
-                **metadata,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-    log.info(
-        "Fast extraction complete in %.2fs - %d chars -> %s",
-        elapsed, len(text), out_file,
-    )
-    return out_file
-
-
-# ---------------------------------------------------------------------------
 # Full extraction via Marker
 # ---------------------------------------------------------------------------
 
@@ -371,8 +274,7 @@ def _find_marker_cmd() -> str:
 
     raise FileNotFoundError(
         "Marker CLI 'marker_single' was not found in the active Python environment.\n"
-        "Install/repair Marker with: pip install -U marker-pdf\n"
-        "Or use --fast mode for born-digital PDFs (much faster, no ML models)."
+        "Install/repair Marker with: pip install -U marker-pdf"
     )
 
 
@@ -403,8 +305,7 @@ def extract_pdf_marker(pdf_path: Path, markdown_dir: Path) -> Path:
 
     log.info("Starting Marker extraction for: %s", pdf_path.name)
     log.info(
-        "NOTE: Marker loads heavy ML models. This may take 5–15 minutes on CPU.\n"
-        "      For born-digital PDFs, use --fast for near-instant extraction."
+        "NOTE: Marker loads heavy ML models. This may take 5–15 minutes on CPU."
     )
 
     marker_cmd = _find_marker_cmd()
@@ -454,21 +355,17 @@ def extract_pdf_marker(pdf_path: Path, markdown_dir: Path) -> Path:
 # Unified entry point
 # ---------------------------------------------------------------------------
 
-def extract_pdf(pdf_path: Path, markdown_dir: Path, fast: bool = False) -> Path:
+def extract_pdf(pdf_path: Path, markdown_dir: Path) -> Path:
     """
-    Extract text from *pdf_path*.
+    Extract text from *pdf_path* using Marker.
 
     Args:
         pdf_path:     Path to the input PDF.
         markdown_dir: Root output directory for extracted text/markdown.
-        fast:         If True, use pdftext (fast, no ML models).
-                      If False, use Marker (slow, handles scanned PDFs).
 
     Returns:
-        Path to the extracted text / markdown file.
+        Path to the extracted markdown file.
     """
-    if fast:
-        return extract_pdf_fast(pdf_path, markdown_dir)
     return extract_pdf_marker(pdf_path, markdown_dir)
 
 
