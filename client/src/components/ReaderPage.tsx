@@ -3,7 +3,8 @@ import PdfViewer from './PdfViewer'
 import TextPanel from './TextPanel'
 import AudioPlayer from './AudioPlayer'
 import { getAudioUrl } from '../api'
-import type { AlignedWord, PageJobResult } from '../types'
+import type { PageJobResult } from '../types'
+import type { ChunkBbox } from './PdfViewer'
 import type { PageProcessProgress } from '../api'
 
 interface Props {
@@ -14,26 +15,6 @@ interface Props {
   processingError?: string | null
   progress?: PageProcessProgress | null
   onBack: () => void
-}
-
-function findActiveWord(words: AlignedWord[], currentTime: number): AlignedWord | null {
-  if (!words.length) return null
-  let lo = 0
-  let hi = words.length - 1
-  let best = -1
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2)
-    if (words[mid].start <= currentTime) {
-      best = mid
-      lo = mid + 1
-    } else {
-      hi = mid - 1
-    }
-  }
-  if (best < 0) return null
-  const w = words[best]
-  if (currentTime >= w.start - 0.02 && currentTime <= w.end + 0.02) return w
-  return null
 }
 
 export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMore = false, processingError = null, progress = null, onBack }: Props) {
@@ -98,14 +79,24 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
     return active
   }, [chunkTiming, currentTime])
 
-  const activeWord = useMemo(() => {
-    const local = findActiveWord(alignment?.words ?? [], currentTime)
-    if (!local) return null
-    return {
-      ...local,
-      page_index: currentPageIndex,
+  // Compute union bbox of all words in the current chunk for block highlighting
+  const activeChunkBboxes = useMemo((): ChunkBbox[] | null => {
+    if (activeChunkIndex < 0 || !alignment?.words?.length || !chunkTiming.length) return null
+    const chunk = chunkTiming[activeChunkIndex]
+    if (!chunk) return null
+    const chunkWords = alignment.words.filter(
+      w => w.start >= chunk.start - 0.05 && w.start <= chunk.end + 0.05
+    )
+    if (!chunkWords.length) return null
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    for (const w of chunkWords) {
+      x0 = Math.min(x0, w.bbox_norm[0])
+      y0 = Math.min(y0, w.bbox_norm[1])
+      x1 = Math.max(x1, w.bbox_norm[2])
+      y1 = Math.max(y1, w.bbox_norm[3])
     }
-  }, [alignment, currentTime, currentPageIndex])
+    return [{ page_index: currentPageIndex, bbox_norm: [x0, y0, x1, y1] }]
+  }, [activeChunkIndex, alignment, chunkTiming, currentPageIndex])
 
   const goToPage = (nextIndex: number, autoPlay: boolean = false) => {
     if (nextIndex < 0 || nextIndex >= pages.length) return
@@ -115,7 +106,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
-      {/* ── Top bar ── */}
+      {/* Top bar */}
       <header className="shrink-0 h-14 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-3">
         <button
           onClick={onBack}
@@ -129,8 +120,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
         <div className="ml-auto flex items-center gap-2 text-xs text-gray-500">
           <span>Audio page {currentPageIndex + 1}/{pages.length}</span>
           <span>· PDF pages: {totalUploadedPages}</span>
-          {chunkTiming.length} chunks
-          <span>· {alignment?.words?.length ?? 0} aligned words</span>
+          <span>· {chunkTiming.length} chunks</span>
           <span>· {alignment?.timing_source ?? 'estimated-chunk'}</span>
           {duration > 0 && (
             <span>· {Math.round(duration / 60)}m audio</span>
@@ -171,17 +161,15 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
         </button>
       </div>
 
-      {/* ── Main panels ── */}
+      {/* Main panels */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* PDF viewer — left 55% */}
         <div className={`${showTextPanel ? 'w-[55%] border-r border-gray-800' : 'w-full'} overflow-auto bg-gray-900`}>
           <PdfViewer
             pdfUrl={fullPdfUrl}
-            activeWord={activeWord}
+            activeChunkBboxes={activeChunkBboxes}
           />
         </div>
 
-        {/* Text panel — right 45% */}
         {showTextPanel && (
           <div className="w-[45%] overflow-y-auto">
             <TextPanel
@@ -197,7 +185,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
         )}
       </div>
 
-      {/* ── Audio player bar ── */}
+      {/* Audio player bar */}
       <div className="shrink-0 border-t border-gray-800 bg-gray-900">
         <AudioPlayer
           audioRef={audioRef}

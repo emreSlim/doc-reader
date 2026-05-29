@@ -2,16 +2,20 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import type { AlignedWord } from '../types'
 // Use CDN worker to avoid Vite bundling issues with PDF.js
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
-interface Props {
-  pdfUrl: string
-  activeWord: AlignedWord | null
+export interface ChunkBbox {
+  page_index: number
+  bbox_norm: [number, number, number, number]
 }
 
-export default function PdfViewer({ pdfUrl, activeWord }: Props) {
+interface Props {
+  pdfUrl: string
+  activeChunkBboxes: ChunkBbox[] | null
+}
+
+export default function PdfViewer({ pdfUrl, activeChunkBboxes }: Props) {
   const [numPages, setNumPages] = useState<number>(0)
   const [containerWidth, setContainerWidth] = useState(600)
   const [zoom, setZoom] = useState(1)
@@ -27,14 +31,12 @@ export default function PdfViewer({ pdfUrl, activeWord }: Props) {
   }, [])
 
   useEffect(() => {
-    if (!activeWord || !rootRef.current) return
+    if (!activeChunkBboxes?.length || !rootRef.current) return
 
-    // Scroll only when highlight is near/outside viewport bounds.
-    // This avoids constant page recentering on every word.
     const scrollContainer = rootRef.current.parentElement
     if (!(scrollContainer instanceof HTMLElement)) return
 
-    const marker = rootRef.current.querySelector('[data-active-word="true"]')
+    const marker = rootRef.current.querySelector('[data-active-block="true"]')
     if (!(marker instanceof HTMLElement)) return
 
     const cRect = scrollContainer.getBoundingClientRect()
@@ -52,7 +54,7 @@ export default function PdfViewer({ pdfUrl, activeWord }: Props) {
       const delta = mRect.bottom - (cRect.bottom - bottomMargin)
       scrollContainer.scrollBy({ top: delta, behavior: 'smooth' })
     }
-  }, [activeWord])
+  }, [activeChunkBboxes])
 
   return (
     <div ref={containerRef} className="p-4 flex flex-col items-center gap-4">
@@ -112,24 +114,22 @@ export default function PdfViewer({ pdfUrl, activeWord }: Props) {
                 renderAnnotationLayer={false}
               />
 
-              {activeWord && activeWord.page_index === i && (
-                <div className="absolute inset-0 pointer-events-none z-20">
+              {activeChunkBboxes?.filter(b => b.page_index === i).map((b, bi) => (
+                <div key={bi} className="absolute inset-0 pointer-events-none z-20">
                   <div
-                    data-active-word="true"
+                    data-active-block="true"
                     style={{
                       position: 'absolute',
-                      left: `${activeWord.bbox_norm[0] * 100}%`,
-                      top: `${activeWord.bbox_norm[1] * 100}%`,
-                      width: `${(activeWord.bbox_norm[2] - activeWord.bbox_norm[0]) * 100}%`,
-                      height: `${(activeWord.bbox_norm[3] - activeWord.bbox_norm[1]) * 100}%`,
-                      background: 'rgba(59, 130, 246, 0.42)',
-                      border: '1px solid rgba(37, 99, 235, 0.9)',
-                      borderRadius: '3px',
-                      boxShadow: '0 0 0 1px rgba(255,255,255,0.16) inset',
+                      left: `${b.bbox_norm[0] * 100}%`,
+                      top: `${b.bbox_norm[1] * 100}%`,
+                      width: `${(b.bbox_norm[2] - b.bbox_norm[0]) * 100}%`,
+                      height: `${(b.bbox_norm[3] - b.bbox_norm[1]) * 100}%`,
+                      background: 'rgba(250, 204, 21, 0.12)',
+                      borderRadius: '4px',
                     }}
                   />
                 </div>
-              )}
+              ))}
             </div>
           </div>
         ))}
