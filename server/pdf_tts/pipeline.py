@@ -19,6 +19,7 @@ from .cleaner import clean_marker_text
 from .chunker import chunk_text, save_chunks
 from .tts import generate_audio
 from .merger import merge_audio
+from .chunk_highlight import build_chunk_highlights
 from .utils import ensure_dirs
 from .validator import validate_dependencies
 from .logger import log
@@ -141,12 +142,31 @@ def run_pipeline(
 
     final_mp3 = dirs["final"] / f"{pdf_stem}_audiobook.mp3"
 
+    # 8 – Chunk highlight mapping (text chunk -> PDF bbox)
+    log.debug("[pipeline] Stage 8: building chunk highlights...")
+    _t0 = _time.perf_counter()
+    highlight_payload, highlight_path = build_chunk_highlights(
+        pdf_path=pdf_path,
+        chunk_timing=chunk_timing,
+        output_dir=output_dir,
+    )
+    log.debug(
+        "[pipeline] Stage 8 done in %.1fs | mapped=%d/%d coverage=%.2f%% path=%s",
+        _time.perf_counter() - _t0,
+        highlight_payload.get("highlight_count", 0),
+        highlight_payload.get("chunk_count", 0),
+        highlight_payload.get("coverage", 0.0),
+        highlight_path.name,
+    )
+
     return {
         "pdf_path": str(pdf_path),
         "extracted_path": str(md_path),
         "extraction_metadata_path": str(get_extraction_metadata_path(md_path)),
         "chunk_files": [str(path) for path in chunk_files],
         "chunk_timing": chunk_timing,
+        "chunk_highlight_path": str(highlight_path),
+        "chunk_highlight_coverage": highlight_payload.get("coverage", 0.0),
         "final_wav": str(final_wav),
         "final_mp3": str(final_mp3) if final_mp3.exists() else None,
         "output_dir": str(output_dir),

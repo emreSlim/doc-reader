@@ -39,23 +39,22 @@ export default function PdfViewer({ pdfUrl, activeChunkBboxes }: Props) {
     if (!(scrollContainer instanceof HTMLElement)) return
 
     const marker = rootRef.current.querySelector('[data-active-block="true"]')
-    if (!(marker instanceof HTMLElement)) return
+    if (!marker) return
 
     const cRect = scrollContainer.getBoundingClientRect()
     const mRect = marker.getBoundingClientRect()
     const topMargin = 90
     const bottomMargin = 130
+    const visibleTop = cRect.top + topMargin
+    const visibleBottom = cRect.bottom - bottomMargin
 
-    if (mRect.top < cRect.top + topMargin) {
-      const delta = (cRect.top + topMargin) - mRect.top
-      scrollContainer.scrollBy({ top: -delta, behavior: 'smooth' })
-      return
-    }
+    if (mRect.top >= visibleTop && mRect.bottom <= visibleBottom) return
 
-    if (mRect.bottom > cRect.bottom - bottomMargin) {
-      const delta = mRect.bottom - (cRect.bottom - bottomMargin)
-      scrollContainer.scrollBy({ top: delta, behavior: 'smooth' })
-    }
+    const markerMid = (mRect.top + mRect.bottom) / 2
+    const visibleMid = (visibleTop + visibleBottom) / 2
+    const delta = markerMid - visibleMid
+
+    scrollContainer.scrollBy({ top: delta, behavior: 'smooth' })
   }, [activeChunkBboxes])
 
   return (
@@ -142,9 +141,9 @@ export default function PdfViewer({ pdfUrl, activeChunkBboxes }: Props) {
                     <polygon
                       data-active-block="true"
                       points={points}
-                      fill="rgba(250, 204, 21, 0.24)"
+                      fill="rgba(250, 204, 21, 0.14)"
                       stroke="rgba(245, 158, 11, 0.85)"
-                      strokeWidth="0.4"
+                      strokeWidth="0.08"
                     />
                   </svg>
                 </div>

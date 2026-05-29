@@ -1,5 +1,5 @@
 import { PDFDocument } from 'pdf-lib'
-import type { ExtractionMetadata, JobResult, PageJobResult } from './types'
+import type { ChunkHighlightPayload, ExtractionMetadata, JobResult, PageJobResult } from './types'
 
 export async function uploadAndProcess(file: File): Promise<string> {
   const form = new FormData()
@@ -83,12 +83,23 @@ export async function processPdfPagesSequentially(
       extractionMeta = null
     }
 
+    let chunkHighlights: ChunkHighlightPayload | null = null
+    try {
+      chunkHighlights = await fetchChunkHighlights(jobId)
+    } catch {
+      chunkHighlights = null
+    }
+
     const pageResult: PageJobResult = {
       pageIndex: i,
       pageNumber: i + 1,
       jobId,
       chunkTiming: done.chunk_timing ?? [],
       extractionMeta,
+      chunkHighlights: chunkHighlights?.highlights.map((h) => ({
+        ...h,
+        page_index: h.page_index + i,
+      })) ?? null,
     }
     results.push(pageResult)
     onPageDone?.(pageResult)
@@ -102,6 +113,12 @@ export async function fetchExtractionMetadata(jobId: string): Promise<Extraction
   const res = await fetch(`/api/v1/jobs/${jobId}/metadata`)
   if (!res.ok) throw new Error(`Metadata fetch failed: ${await res.text()}`)
   return res.json() as Promise<ExtractionMetadata>
+}
+
+export async function fetchChunkHighlights(jobId: string): Promise<ChunkHighlightPayload> {
+  const res = await fetch(`/api/v1/jobs/${jobId}/highlights`)
+  if (!res.ok) throw new Error(`Chunk highlight fetch failed: ${await res.text()}`)
+  return res.json() as Promise<ChunkHighlightPayload>
 }
 
 export function getAudioUrl(jobId: string): string {

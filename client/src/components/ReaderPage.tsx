@@ -4,6 +4,7 @@ import TextPanel from './TextPanel.tsx'
 import AudioPlayer from './AudioPlayer.tsx'
 import { getAudioUrl } from '../api'
 import type { PageJobResult } from '../types'
+import type { ChunkBbox } from './PdfViewer.tsx'
 import type { PageProcessProgress } from '../api'
 
 interface Props {
@@ -28,6 +29,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
 
   const currentPage = pages[currentPageIndex]
   const chunkTiming = currentPage?.chunkTiming ?? []
+  const chunkHighlights = currentPage?.chunkHighlights ?? null
   const audioUrl = currentPage ? getAudioUrl(currentPage.jobId) : ''
 
   useEffect(() => {
@@ -77,7 +79,12 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
     return active
   }, [chunkTiming, currentTime])
 
-  const activeChunkBboxes = null
+  const activeChunkBboxes = useMemo((): ChunkBbox[] | null => {
+    if (activeChunkIndex < 0 || !chunkHighlights?.length) return null
+    const hit = chunkHighlights.find((h) => h.chunk_index === activeChunkIndex)
+    if (!hit?.polygon_norm?.length) return null
+    return [{ page_index: hit.page_index, polygon: hit.polygon_norm, normalized: true }]
+  }, [activeChunkIndex, chunkHighlights])
 
   const goToPage = (nextIndex: number, autoPlay: boolean = false) => {
     if (nextIndex < 0 || nextIndex >= pages.length) return

@@ -5,6 +5,29 @@ export interface ChunkTiming {
   end: number
 }
 
+export interface ChunkHighlight {
+  chunk_index: number
+  page_index: number
+  bbox_norm: [number, number, number, number]
+  polygon_norm: [number, number][]
+  match_score: number
+  matched_tokens: number
+  query_tokens: number
+}
+
+export interface ChunkHighlightPayload {
+  pdf_path: string
+  chunk_count: number
+  highlight_count: number
+  coverage: number
+  pages: Array<{
+    page_index: number
+    width: number
+    height: number
+  }>
+  highlights: ChunkHighlight[]
+}
+
 export type PolygonPoint = [number, number]
 
 export interface ExtractionMetadataRegion {
@@ -36,6 +59,8 @@ export interface JobResult {
   error?: string
   chunk_timing: ChunkTiming[]
   extraction_metadata_path?: string
+  chunk_highlight_path?: string
+  chunk_highlight_coverage?: number
   has_mp3: boolean
   pdf_name: string
 }
@@ -46,4 +71,5 @@ export interface PageJobResult {
   jobId: string
   chunkTiming: ChunkTiming[]
   extractionMeta: ExtractionMetadata | null
+  chunkHighlights: ChunkHighlight[] | null
 }

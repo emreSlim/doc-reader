@@ -121,10 +121,11 @@ def _run_pipeline_bg(
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["result"] = result
         log.info(
-            "[job:%s] Completed. chunks=%d total_audio=%.1fs",
+            "[job:%s] Completed. chunks=%d total_audio=%.1fs highlight_coverage=%.2f%%",
             job_id,
             len(result.get("chunk_timing", [])),
             result.get("chunk_timing", [{}])[-1].get("end", 0.0) if result.get("chunk_timing") else 0.0,
+            float(result.get("chunk_highlight_coverage", 0.0)),
         )
     except Exception as exc:
         log.exception("[job:%s] Pipeline failed: %s", job_id, exc)
@@ -243,6 +244,8 @@ def get_job(job_id: str):
         "status": "done",
         "chunk_timing": result.get("chunk_timing", []),
         "extraction_metadata_path": result.get("extraction_metadata_path"),
+        "chunk_highlight_path": result.get("chunk_highlight_path"),
+        "chunk_highlight_coverage": float(result.get("chunk_highlight_coverage", 0.0)),
         "has_mp3": bool(result.get("final_mp3")),
         "pdf_name": Path(result["pdf_path"]).name,
     }
@@ -252,6 +255,27 @@ def get_job(job_id: str):
 def get_alignment(job_id: str):
     """Word-level alignment is disabled in this build."""
     raise HTTPException(status_code=410, detail="Word-level alignment is disabled")
+
+
+@app.get("/api/v1/jobs/{job_id}/highlights")
+def get_chunk_highlights(job_id: str):
+    """Return chunk-level highlight payload for PDF area tinting."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "done":
+        raise HTTPException(status_code=400, detail=f"Job not done (status: {job['status']})")
+
+    result = job["result"]
+    path_str = result.get("chunk_highlight_path")
+    if not path_str:
+        raise HTTPException(status_code=404, detail="No chunk highlight path in result")
+
+    path = Path(path_str)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Chunk highlight file missing: {path}")
+
+    return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
 
 
 @app.get("/api/v1/jobs/{job_id}/metadata")
