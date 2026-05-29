@@ -41,6 +41,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [showTextPanel, setShowTextPanel] = useState(true)
   const autoPlayPendingRef = useRef(false)
   const audioRef = useRef<HTMLAudioElement>(null)
   const totalUploadedPages = progress?.pageCount && progress.pageCount > 0 ? progress.pageCount : pages.length
@@ -162,12 +163,18 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
         >
           Next page →
         </button>
+        <button
+          onClick={() => setShowTextPanel((v) => !v)}
+          className="ml-auto px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+        >
+          {showTextPanel ? 'Hide text panel' : 'Show text panel'}
+        </button>
       </div>
 
       {/* ── Main panels ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* PDF viewer — left 55% */}
-        <div className="w-[55%] border-r border-gray-800 overflow-y-auto bg-gray-900">
+        <div className={`${showTextPanel ? 'w-[55%] border-r border-gray-800' : 'w-full'} overflow-y-auto bg-gray-900`}>
           <PdfViewer
             pdfUrl={fullPdfUrl}
             activeWord={activeWord}
@@ -175,17 +182,19 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
         </div>
 
         {/* Text panel — right 45% */}
-        <div className="w-[45%] overflow-y-auto">
-          <TextPanel
-            chunkTiming={chunkTiming}
-            activeChunkIndex={activeChunkIndex}
-            onChunkClick={(idx: number) => {
-              if (audioRef.current) {
-                audioRef.current.currentTime = chunkTiming[idx].start
-              }
-            }}
-          />
-        </div>
+        {showTextPanel && (
+          <div className="w-[45%] overflow-y-auto">
+            <TextPanel
+              chunkTiming={chunkTiming}
+              activeChunkIndex={activeChunkIndex}
+              onChunkClick={(idx: number) => {
+                if (audioRef.current) {
+                  audioRef.current.currentTime = chunkTiming[idx].start
+                }
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Audio player bar ── */}
