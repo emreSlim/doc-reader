@@ -244,6 +244,7 @@ def get_job(job_id: str):
         "job_id": job_id,
         "status": "done",
         "chunk_timing": result.get("chunk_timing", []),
+        "extraction_metadata_path": result.get("extraction_metadata_path"),
         "aligned_word_count": result.get("aligned_word_count", 0),
         "word_alignment_path": result.get("word_alignment_path"),
         "alignment_timing_source": result.get("alignment_timing_source", "estimated-chunk"),
@@ -271,6 +272,27 @@ def get_alignment(job_id: str):
         raise HTTPException(status_code=404, detail=f"Alignment file missing: {align_path}")
 
     return JSONResponse(json.loads(align_path.read_text(encoding="utf-8")))
+
+
+@app.get("/api/v1/jobs/{job_id}/metadata")
+def get_extraction_metadata(job_id: str):
+    """Return extractor metadata JSON (Marker polygons / layout blocks)."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "done":
+        raise HTTPException(status_code=400, detail=f"Job not done (status: {job['status']})")
+
+    result = job["result"]
+    meta_path_str = result.get("extraction_metadata_path")
+    if not meta_path_str:
+        raise HTTPException(status_code=404, detail="No extraction metadata path in result")
+
+    meta_path = Path(meta_path_str)
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail=f"Extraction metadata file missing: {meta_path}")
+
+    return JSONResponse(json.loads(meta_path.read_text(encoding="utf-8")))
 
 
 @app.get("/api/v1/jobs/{job_id}/audio")

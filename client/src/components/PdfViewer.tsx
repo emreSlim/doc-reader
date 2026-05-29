@@ -7,7 +7,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.vers
 
 export interface ChunkBbox {
   page_index: number
-  bbox_norm: [number, number, number, number]
+  polygon: [number, number][]
+  normalized?: boolean
 }
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 
 export default function PdfViewer({ pdfUrl, activeChunkBboxes }: Props) {
   const [numPages, setNumPages] = useState<number>(0)
+  const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({})
   const [containerWidth, setContainerWidth] = useState(600)
   const [zoom, setZoom] = useState(1)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -112,24 +114,42 @@ export default function PdfViewer({ pdfUrl, activeChunkBboxes }: Props) {
                 scale={zoom}
                 renderTextLayer={true}
                 renderAnnotationLayer={false}
+                onLoadSuccess={(page) => {
+                  const view = Array.isArray(page.view) ? page.view : [0, 0, 1, 1]
+                  const width = Math.max(1, Math.abs(Number(view[2] ?? 1) - Number(view[0] ?? 0)))
+                  const height = Math.max(1, Math.abs(Number(view[3] ?? 1) - Number(view[1] ?? 0)))
+                  setPageSizes((prev) => {
+                    const current = prev[i]
+                    if (current && current.width === width && current.height === height) return prev
+                    return { ...prev, [i]: { width, height } }
+                  })
+                }}
               />
 
-              {activeChunkBboxes?.filter(b => b.page_index === i).map((b, bi) => (
+              {activeChunkBboxes?.filter(b => b.page_index === i).map((b, bi) => {
+                const pageSize = pageSizes[i]
+                if (!pageSize || !b.polygon?.length) return null
+                const points = b.polygon
+                  .map(([x, y]) => {
+                    const px = b.normalized ? x * 100 : (x / pageSize.width) * 100
+                    const py = b.normalized ? y * 100 : (y / pageSize.height) * 100
+                    return `${px},${py}`
+                  })
+                  .join(' ')
+                return (
                 <div key={bi} className="absolute inset-0 pointer-events-none z-20">
-                  <div
-                    data-active-block="true"
-                    style={{
-                      position: 'absolute',
-                      left: `${b.bbox_norm[0] * 100}%`,
-                      top: `${b.bbox_norm[1] * 100}%`,
-                      width: `${(b.bbox_norm[2] - b.bbox_norm[0]) * 100}%`,
-                      height: `${(b.bbox_norm[3] - b.bbox_norm[1]) * 100}%`,
-                      background: 'rgba(250, 204, 21, 0.12)',
-                      borderRadius: '4px',
-                    }}
-                  />
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+                    <polygon
+                      data-active-block="true"
+                      points={points}
+                      fill="rgba(250, 204, 21, 0.24)"
+                      stroke="rgba(245, 158, 11, 0.85)"
+                      strokeWidth="0.4"
+                    />
+                  </svg>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         ))}

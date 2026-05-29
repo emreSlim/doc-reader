@@ -1,5 +1,5 @@
 import { PDFDocument } from 'pdf-lib'
-import type { JobResult, PageJobResult, WordAlignmentPayload } from './types'
+import type { ExtractionMetadata, JobResult, PageJobResult, WordAlignmentPayload } from './types'
 
 export async function uploadAndProcess(file: File): Promise<string> {
   const form = new FormData()
@@ -53,7 +53,7 @@ async function waitForJobDone(jobId: string, intervalMs: number = 3000): Promise
 export interface PageProcessProgress {
   pageIndex: number
   pageCount: number
-  phase: 'splitting' | 'uploading' | 'processing' | 'alignment' | 'done'
+  phase: 'splitting' | 'uploading' | 'processing' | 'metadata' | 'done'
   jobId?: string
 }
 
@@ -75,7 +75,14 @@ export async function processPdfPagesSequentially(
     onProgress?.({ pageIndex: i, pageCount: total, phase: 'processing', jobId })
     const done = await waitForJobDone(jobId)
 
-    onProgress?.({ pageIndex: i, pageCount: total, phase: 'alignment', jobId })
+    onProgress?.({ pageIndex: i, pageCount: total, phase: 'metadata', jobId })
+    let extractionMeta: ExtractionMetadata | null = null
+    try {
+      extractionMeta = await fetchExtractionMetadata(jobId)
+    } catch {
+      extractionMeta = null
+    }
+
     let alignment: WordAlignmentPayload | null = null
     try {
       alignment = await fetchAlignment(jobId)
@@ -88,6 +95,7 @@ export async function processPdfPagesSequentially(
       pageNumber: i + 1,
       jobId,
       chunkTiming: done.chunk_timing ?? [],
+      extractionMeta,
       alignment,
     }
     results.push(pageResult)
@@ -96,6 +104,12 @@ export async function processPdfPagesSequentially(
 
   onProgress?.({ pageIndex: total - 1, pageCount: total, phase: 'done', jobId: results[total - 1]?.jobId })
   return results
+}
+
+export async function fetchExtractionMetadata(jobId: string): Promise<ExtractionMetadata> {
+  const res = await fetch(`/api/v1/jobs/${jobId}/metadata`)
+  if (!res.ok) throw new Error(`Metadata fetch failed: ${await res.text()}`)
+  return res.json() as Promise<ExtractionMetadata>
 }
 
 export async function fetchAlignment(jobId: string): Promise<WordAlignmentPayload> {

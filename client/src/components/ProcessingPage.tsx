@@ -12,7 +12,7 @@ const STAGES = [
   'Splitting PDF into pages…',
   'Uploading current page…',
   'Processing current page…',
-  'Fetching alignment…',
+  'Fetching block polygons…',
   'Finalizing…',
 ]
 
@@ -25,7 +25,7 @@ function stageFromProgress(progress: PageProcessProgress | null): number {
       return 1
     case 'processing':
       return 2
-    case 'alignment':
+    case 'metadata':
       return 3
     case 'done':
       return 4

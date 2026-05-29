@@ -31,6 +31,29 @@ export interface WordAlignmentPayload {
   words: AlignedWord[]
 }
 
+export type PolygonPoint = [number, number]
+
+export interface ExtractionMetadataRegion {
+  title?: string
+  text?: string
+  page_id?: number
+  page_index?: number
+  polygon?: PolygonPoint[]
+  bbox?: [number, number, number, number]
+  kept?: boolean
+}
+
+export interface ExtractionMetadata {
+  table_of_contents?: ExtractionMetadataRegion[]
+  pages?: Array<{
+    page_id?: number
+    page_index?: number
+    width?: number
+    height?: number
+    blocks?: ExtractionMetadataRegion[]
+  }>
+}
+
 export type JobStatus = 'processing' | 'done' | 'error'
 
 export interface JobResult {
@@ -38,6 +61,7 @@ export interface JobResult {
   status: JobStatus
   error?: string
   chunk_timing: ChunkTiming[]
+  extraction_metadata_path?: string
   aligned_word_count?: number
   word_alignment_path?: string
   alignment_timing_source?: 'forced-whisper' | 'estimated-chunk'
@@ -50,5 +74,6 @@ export interface PageJobResult {
   pageNumber: number
   jobId: string
   chunkTiming: ChunkTiming[]
+  extractionMeta: ExtractionMetadata | null
   alignment: WordAlignmentPayload | null
 }
