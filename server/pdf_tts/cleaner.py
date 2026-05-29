@@ -37,6 +37,37 @@ def _remove_references_section(text: str) -> str:
     return text
 
 
+def _normalize_list_items_for_tts(text: str) -> str:
+    """
+    Convert markdown list items into sentence-like lines for better narration.
+
+    Example:
+      - Item A
+      - Item B
+    becomes:
+      Item A.
+      Item B.
+    """
+    out_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        m = re.match(r"^\s*(?:[-+*]|\d+[\.)])\s+(.+?)\s*$", line)
+        if not m:
+            out_lines.append(raw_line)
+            continue
+
+        item = m.group(1).strip()
+        if not item:
+            out_lines.append("")
+            continue
+
+        if not re.search(r"[.!?:;]$", item):
+            item = f"{item}."
+        out_lines.append(item)
+
+    return "\n".join(out_lines)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -61,6 +92,9 @@ def clean_marker_text(text: str, remove_references: bool = True) -> str:
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)         # markdown links
     text = re.sub(r"\*{1,3}([^*\n]+)\*{1,3}", r"\1", text)           # bold/italic
     text = re.sub(r"_{1,3}([^_\n]+)_{1,3}", r"\1", text)               # bold/italic
+
+    # Add natural pauses for markdown list items.
+    text = _normalize_list_items_for_tts(text)
 
     # Basic whitespace normalization.
     text = re.sub(r"\n{3,}", "\n\n", text)
