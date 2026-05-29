@@ -28,6 +28,73 @@ def _tokenize_words(text: str) -> list[str]:
     return [t for t in re.findall(r"[A-Za-z0-9']+", text) if _normalize(t)]
 
 
+def _order_page_words(raw_words: list[tuple], page_width: float) -> list[tuple]:
+    """
+    Return words in a reading order that handles multi-column layouts.
+
+    For 2-column pages, read left column top->bottom first, then right column.
+    For single-column pages, keep top->bottom, left->right ordering.
+    """
+    if not raw_words:
+        return []
+
+    # Group by text block to preserve line / word sequencing inside each block.
+    blocks: dict[int, dict] = {}
+    for w in raw_words:
+        # x0, y0, x1, y1, word, block_no, line_no, word_no
+        x0, y0, x1, y1, _, block_no, line_no, word_no = w
+        b = blocks.setdefault(
+            int(block_no),
+            {
+                "x0": float(x0),
+                "y0": float(y0),
+                "x1": float(x1),
+                "y1": float(y1),
+                "words": [],
+            },
+        )
+        b["x0"] = min(b["x0"], float(x0))
+        b["y0"] = min(b["y0"], float(y0))
+        b["x1"] = max(b["x1"], float(x1))
+        b["y1"] = max(b["y1"], float(y1))
+        b["words"].append((int(line_no), int(word_no), w))
+
+    block_list = list(blocks.values())
+
+    # Heuristic 2-column detection from block centers around page midpoint.
+    mid_x = page_width * 0.5
+    gap = max(20.0, page_width * 0.04)
+
+    left_blocks = [b for b in block_list if ((b["x0"] + b["x1"]) * 0.5) < (mid_x - gap)]
+    right_blocks = [b for b in block_list if ((b["x0"] + b["x1"]) * 0.5) > (mid_x + gap)]
+    is_two_column = bool(left_blocks and right_blocks)
+
+    ordered_blocks: list[dict]
+    if is_two_column:
+        # Column-major reading order.
+        left_sorted = sorted(left_blocks, key=lambda b: (b["y0"], b["x0"]))
+        right_sorted = sorted(right_blocks, key=lambda b: (b["y0"], b["x0"]))
+
+        # Blocks near the center/gutter are rare; place by visual flow.
+        center_blocks = [
+            b
+            for b in block_list
+            if (mid_x - gap) <= ((b["x0"] + b["x1"]) * 0.5) <= (mid_x + gap)
+        ]
+        center_sorted = sorted(center_blocks, key=lambda b: (b["y0"], b["x0"]))
+
+        ordered_blocks = left_sorted + center_sorted + right_sorted
+    else:
+        ordered_blocks = sorted(block_list, key=lambda b: (b["y0"], b["x0"]))
+
+    ordered_words: list[tuple] = []
+    for b in ordered_blocks:
+        for _, _, w in sorted(b["words"], key=lambda t: (t[0], t[1])):
+            ordered_words.append(w)
+
+    return ordered_words
+
+
 def _extract_pdf_words(pdf_path: Path) -> tuple[list[dict], list[dict]]:
     """Return ordered PDF words and page dimensions."""
     try:
@@ -52,7 +119,9 @@ def _extract_pdf_words(pdf_path: Path) -> tuple[list[dict], list[dict]]:
             )
 
             # tuples: x0, y0, x1, y1, "word", block_no, line_no, word_no
-            words = page.get_text("words", sort=True)
+            # Read unsorted and apply column-aware ordering ourselves.
+            words = page.get_text("words", sort=False)
+            words = _order_page_words(words, width)
             for x0, y0, x1, y1, word, *_ in words:
                 norm = _normalize(str(word))
                 if not norm:
