@@ -70,24 +70,37 @@ def run_pipeline(
     log.info("Output dir : %s", output_dir)
     log.info("=" * 60)
 
+    import time as _time
+
     # 1 – Pre-flight checks
+    log.debug("[pipeline] Stage 1: validating dependencies...")
     validate_dependencies(piper_exe=piper_exe, model_path=model_path)
 
     # 2 – Create output directories
+    log.debug("[pipeline] Stage 2: creating output dirs at %s", output_dir)
     dirs = ensure_dirs(output_dir)
 
     # 3 – PDF extraction
+    log.debug("[pipeline] Stage 3: extracting PDF (fast=%s)...", fast)
+    _t0 = _time.perf_counter()
     md_path  = extract_pdf(pdf_path, dirs["markdown"], fast=fast)
     raw_text = read_markdown(md_path)
+    log.debug("[pipeline] Stage 3 done in %.1fs | raw_chars=%d", _time.perf_counter() - _t0, len(raw_text))
 
     # 4 – Text cleaning
+    log.debug("[pipeline] Stage 4: cleaning text (remove_references=%s)...", remove_references)
     clean = clean_text(raw_text, remove_references=remove_references)
+    log.debug("[pipeline] Stage 4 done | clean_chars=%d (removed %d chars)", len(clean), len(raw_text) - len(clean))
 
     # 5 – Sentence chunking
+    log.debug("[pipeline] Stage 5: chunking (target=%d chars)...", chunk_size)
     chunks = chunk_text(clean, target_chars=chunk_size, max_chars=chunk_size + 200)
     chunk_files = save_chunks(chunks, dirs["chunks"], pdf_stem)
+    log.debug("[pipeline] Stage 5 done | %d chunks saved", len(chunks))
 
     # 6 – TTS generation
+    log.debug("[pipeline] Stage 6: TTS generation for %d chunks...", len(chunks))
+    _t0 = _time.perf_counter()
     audio_files = generate_audio(
         chunks=chunks,
         audio_dir=dirs["audio"],
@@ -95,12 +108,15 @@ def run_pipeline(
         piper_exe=piper_exe,
         model_path=model_path,
     )
+    log.debug("[pipeline] Stage 6 done in %.1fs | %d WAVs generated", _time.perf_counter() - _t0, len(audio_files))
 
     # Compute chunk timing from WAV durations BEFORE potential deletion
+    log.debug("[pipeline] Computing chunk timing from WAV durations...")
     cumulative = 0.0
     chunk_timing: list[dict] = []
     for i, (wav_path, chunk_body) in enumerate(zip(audio_files, chunks)):
         dur = _get_wav_duration(wav_path)
+        log.debug("  chunk %d: %.3fs | %d chars | %s", i, dur, len(chunk_body), wav_path.name)
         chunk_timing.append({
             "index": i,
             "text": chunk_body,
@@ -111,6 +127,8 @@ def run_pipeline(
     log.info("Computed chunk timing: %d chunks, total %.1fs", len(chunk_timing), cumulative)
 
     # 7 – Merge
+    log.debug("[pipeline] Stage 7: merging %d WAV files (mp3=%s keep_chunks=%s)...", len(audio_files), generate_mp3, keep_chunks)
+    _t0 = _time.perf_counter()
     final_wav = merge_audio(
         audio_files=audio_files,
         final_dir=dirs["final"],
@@ -118,6 +136,7 @@ def run_pipeline(
         generate_mp3=generate_mp3,
         keep_chunks=keep_chunks,
     )
+    log.debug("[pipeline] Stage 7 done in %.1fs | final_wav=%s", _time.perf_counter() - _t0, final_wav.name)
 
     log.info("=" * 60)
     log.info("Pipeline complete!")
@@ -128,12 +147,21 @@ def run_pipeline(
 
     # 8 – Word alignment (timing + PDF word bboxes)
     alignment_audio = final_mp3 if final_mp3.exists() else final_wav
+    log.debug("[pipeline] Stage 8: building word alignment using %s...", alignment_audio.name)
+    _t0 = _time.perf_counter()
     alignment_payload, alignment_path = build_word_alignment(
         pdf_path=pdf_path,
         chunk_timing=chunk_timing,
         output_dir=output_dir,
         audio_path=alignment_audio,
         extraction_metadata_path=get_extraction_metadata_path(md_path),
+    )
+    log.debug(
+        "[pipeline] Stage 8 done in %.1fs | aligned_words=%d source=%s path=%s",
+        _time.perf_counter() - _t0,
+        alignment_payload.get("aligned_word_count", 0),
+        alignment_payload.get("timing_source", "?"),
+        alignment_path.name,
     )
 
     return {

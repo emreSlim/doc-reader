@@ -8,13 +8,15 @@ Run:
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -41,9 +43,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def request_logger(request: Request, call_next):
+    start = time.perf_counter()
+    log.debug("[http] -> %s %s", request.method, request.url.path)
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    log.debug("[http] <- %s %s %d (%.1f ms)", request.method, request.url.path, response.status_code, elapsed_ms)
+    return response
+
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 INPUT_UPLOAD_DIR = WORKSPACE_ROOT / "input" / "api_uploads"
 INPUT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Thread pool for running pipeline jobs (separate from Uvicorn's own pool).
+# Uses all available CPU cores; each pipeline job spawns its own Piper subprocesses.
+_executor = ThreadPoolExecutor(max_workers=os.cpu_count()-2 or 1, thread_name_prefix="pipeline")
 
 # In-memory job registry
 _jobs: dict[str, dict] = {}
@@ -88,8 +104,15 @@ def _run_pipeline_bg(
     chunk_size: int,
     fast: bool,
 ) -> None:
+    log.debug(
+        "[job:%s] Pipeline thread started | pdf=%s model=%s piper=%s out=%s "
+        "mp3=%s remove_refs=%s chunk_size=%d fast=%s",
+        job_id, pdf.name, model.name, piper.name, out_root,
+        generate_mp3, remove_references, chunk_size, fast,
+    )
     try:
         validate_dependencies(piper_exe=piper, model_path=model)
+        log.debug("[job:%s] Dependencies validated.", job_id)
         result = run_pipeline(
             pdf_path=pdf,
             model_path=model,
@@ -103,9 +126,16 @@ def _run_pipeline_bg(
         )
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["result"] = result
-        log.info("Job %s completed.", job_id)
+        log.info(
+            "[job:%s] Completed. chunks=%d total_audio=%.1fs aligned_words=%d source=%s",
+            job_id,
+            len(result.get("chunk_timing", [])),
+            result.get("chunk_timing", [{}])[-1].get("end", 0.0) if result.get("chunk_timing") else 0.0,
+            result.get("aligned_word_count", 0),
+            result.get("alignment_timing_source", "?"),
+        )
     except Exception as exc:
-        log.exception("Job %s failed", job_id)
+        log.exception("[job:%s] Pipeline failed: %s", job_id, exc)
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
 
@@ -153,7 +183,6 @@ async def extract_endpoint(
 
 @app.post("/api/v1/process")
 async def process_endpoint(
-    background_tasks: BackgroundTasks,
     pdf_path: Optional[str] = Form(default=None),
     file: Optional[UploadFile] = File(default=None),
     fast: bool = Form(default=True),
@@ -190,8 +219,12 @@ async def process_endpoint(
         "error": None,
     }
     log.info("Started job %s for PDF: %s", job_id, pdf.name)
+    log.debug(
+        "[job:%s] Params | fast=%s remove_refs=%s chunk_size=%d mp3=%s model=%s",
+        job_id, fast, remove_references, chunk_size, generate_mp3, model.name,
+    )
 
-    background_tasks.add_task(
+    _executor.submit(
         _run_pipeline_bg,
         job_id, pdf, model, piper, out_root,
         generate_mp3, remove_references, chunk_size, fast,

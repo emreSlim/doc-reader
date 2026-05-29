@@ -328,30 +328,47 @@ def build_word_alignment(
     extraction_metadata_path: Path | None = None,
 ) -> tuple[dict, Path]:
     """Build and persist word alignment JSON for UI use."""
+    log.debug("[alignment] Starting | pdf=%s chunks=%d audio=%s metadata=%s",
+              pdf_path.name, len(chunk_timing),
+              audio_path.name if audio_path else "None",
+              extraction_metadata_path.name if extraction_metadata_path else "None")
+
     spoken_words = None
     timing_source = "estimated-chunk"
 
     if audio_path and audio_path.exists():
+        log.debug("[alignment] Attempting forced alignment via faster-whisper on %s", audio_path.name)
         spoken_words = _build_spoken_words_forced(audio_path)
         if spoken_words:
             timing_source = "forced-whisper"
+            log.debug("[alignment] Forced alignment succeeded: %d spoken words", len(spoken_words))
+        else:
+            log.debug("[alignment] Forced alignment unavailable or failed; using chunk timing fallback")
 
     if not spoken_words:
         spoken_words = _build_spoken_words(chunk_timing)
+        log.debug("[alignment] Built %d spoken words from chunk timing", len(spoken_words))
 
     pdf_words: list[dict]
     pages: list[dict]
     if extraction_metadata_path and extraction_metadata_path.exists():
         try:
+            log.debug("[alignment] Extracting PDF words from metadata: %s", extraction_metadata_path.name)
             pdf_words, pages = _extract_words_from_metadata(extraction_metadata_path, pdf_path)
+            log.debug("[alignment] Extracted %d PDF words from metadata (%d pages)", len(pdf_words), len(pages))
             log.info("Using extraction metadata for alignment word source: %s", extraction_metadata_path)
         except Exception:
             log.exception("Failed to parse extraction metadata; falling back to PyMuPDF words")
             pdf_words, pages = _extract_pdf_words(pdf_path)
+            log.debug("[alignment] Fallback: extracted %d PDF words via PyMuPDF", len(pdf_words))
     else:
+        log.debug("[alignment] No metadata path; extracting PDF words directly via PyMuPDF")
         pdf_words, pages = _extract_pdf_words(pdf_path)
+        log.debug("[alignment] Extracted %d PDF words (%d pages)", len(pdf_words), len(pages))
 
+    log.debug("[alignment] Matching %d spoken words against %d PDF words...", len(spoken_words), len(pdf_words))
     aligned_words = _match_spoken_to_pdf(spoken_words, pdf_words)
+    log.debug("[alignment] Matched %d word pairs", len(aligned_words))
 
     payload = {
         "pdf_path": str(pdf_path),
