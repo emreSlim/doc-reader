@@ -121,12 +121,10 @@ def _run_pipeline_bg(
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["result"] = result
         log.info(
-            "[job:%s] Completed. chunks=%d total_audio=%.1fs aligned_words=%d source=%s",
+            "[job:%s] Completed. chunks=%d total_audio=%.1fs",
             job_id,
             len(result.get("chunk_timing", [])),
             result.get("chunk_timing", [{}])[-1].get("end", 0.0) if result.get("chunk_timing") else 0.0,
-            result.get("aligned_word_count", 0),
-            result.get("alignment_timing_source", "?"),
         )
     except Exception as exc:
         log.exception("[job:%s] Pipeline failed: %s", job_id, exc)
@@ -245,9 +243,6 @@ def get_job(job_id: str):
         "status": "done",
         "chunk_timing": result.get("chunk_timing", []),
         "extraction_metadata_path": result.get("extraction_metadata_path"),
-        "aligned_word_count": result.get("aligned_word_count", 0),
-        "word_alignment_path": result.get("word_alignment_path"),
-        "alignment_timing_source": result.get("alignment_timing_source", "estimated-chunk"),
         "has_mp3": bool(result.get("final_mp3")),
         "pdf_name": Path(result["pdf_path"]).name,
     }
@@ -255,23 +250,8 @@ def get_job(job_id: str):
 
 @app.get("/api/v1/jobs/{job_id}/alignment")
 def get_alignment(job_id: str):
-    """Return word-level alignment payload for precise PDF highlighting."""
-    job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] != "done":
-        raise HTTPException(status_code=400, detail=f"Job not done (status: {job['status']})")
-
-    result = job["result"]
-    align_path_str = result.get("word_alignment_path")
-    if not align_path_str:
-        raise HTTPException(status_code=404, detail="No alignment path in result")
-
-    align_path = Path(align_path_str)
-    if not align_path.exists():
-        raise HTTPException(status_code=404, detail=f"Alignment file missing: {align_path}")
-
-    return JSONResponse(json.loads(align_path.read_text(encoding="utf-8")))
+    """Word-level alignment is disabled in this build."""
+    raise HTTPException(status_code=410, detail="Word-level alignment is disabled")
 
 
 @app.get("/api/v1/jobs/{job_id}/metadata")

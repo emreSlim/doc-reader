@@ -4,13 +4,7 @@ import TextPanel from './TextPanel.tsx'
 import AudioPlayer from './AudioPlayer.tsx'
 import { getAudioUrl } from '../api'
 import type { PageJobResult } from '../types'
-import type { ChunkBbox } from './PdfViewer.tsx'
 import type { PageProcessProgress } from '../api'
-
-function _bboxToPolygon(bbox: [number, number, number, number]): [number, number][] {
-  const [x0, y0, x1, y1] = bbox
-  return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-}
 
 interface Props {
   fileName: string
@@ -34,7 +28,6 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
 
   const currentPage = pages[currentPageIndex]
   const chunkTiming = currentPage?.chunkTiming ?? []
-  const alignment = currentPage?.alignment ?? null
   const audioUrl = currentPage ? getAudioUrl(currentPage.jobId) : ''
 
   useEffect(() => {
@@ -84,44 +77,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
     return active
   }, [chunkTiming, currentTime])
 
-  // Alignment-only highlighting (no Marker metadata polygons).
-  const activeChunkBboxes = useMemo((): ChunkBbox[] | null => {
-    if (activeChunkIndex < 0 || !chunkTiming.length) return null
-    const chunk = chunkTiming[activeChunkIndex]
-    if (!chunk) return null
-
-    // 1) Primary: compute union of aligned words overlapping this chunk window.
-    //    Use bbox_norm (0–1 relative coords) so PdfViewer needs no page-size lookup.
-    if (alignment?.words?.length) {
-      let chunkWords = alignment.words.filter(
-        w => w.end >= chunk.start - 0.03 && w.start <= chunk.end + 0.03
-      )
-
-      // If no direct overlap (timing jitter), map chunk index proportionally.
-      if (!chunkWords.length) {
-        const totalChunks = Math.max(1, chunkTiming.length)
-        const totalWords = alignment.words.length
-        const startIdx = Math.floor((activeChunkIndex / totalChunks) * totalWords)
-        const endIdx = Math.max(startIdx + 1, Math.floor(((activeChunkIndex + 1) / totalChunks) * totalWords))
-        chunkWords = alignment.words.slice(startIdx, Math.min(totalWords, endIdx))
-      }
-
-      if (chunkWords.length) {
-        // Use normalised coords (0–1); PdfViewer scales to 100 directly.
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-        for (const w of chunkWords) {
-          const [nx0, ny0, nx1, ny1] = w.bbox_norm
-          x0 = Math.min(x0, nx0)
-          y0 = Math.min(y0, ny0)
-          x1 = Math.max(x1, nx1)
-          y1 = Math.max(y1, ny1)
-        }
-        return [{ page_index: currentPageIndex, polygon: _bboxToPolygon([x0, y0, x1, y1]), normalized: true }]
-      }
-    }
-
-    return null
-  }, [activeChunkIndex, chunkTiming, alignment, currentPageIndex])
+  const activeChunkBboxes = null
 
   const goToPage = (nextIndex: number, autoPlay: boolean = false) => {
     if (nextIndex < 0 || nextIndex >= pages.length) return
@@ -146,7 +102,7 @@ export default function ReaderPage({ fileName, pages, fullPdfUrl, isProcessingMo
           <span>Audio page {currentPageIndex + 1}/{pages.length}</span>
           <span>· PDF pages: {totalUploadedPages}</span>
           <span>· {chunkTiming.length} chunks</span>
-          <span>· alignment block tint</span>
+          <span>· chunk sync</span>
           {duration > 0 && (
             <span>· {Math.round(duration / 60)}m audio</span>
           )}

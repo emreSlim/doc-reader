@@ -1,5 +1,5 @@
 import { PDFDocument } from 'pdf-lib'
-import type { ExtractionMetadata, JobResult, PageJobResult, WordAlignmentPayload } from './types'
+import type { ExtractionMetadata, JobResult, PageJobResult } from './types'
 
 export async function uploadAndProcess(file: File): Promise<string> {
   const form = new FormData()
@@ -83,20 +83,12 @@ export async function processPdfPagesSequentially(
       extractionMeta = null
     }
 
-    let alignment: WordAlignmentPayload | null = null
-    try {
-      alignment = await fetchAlignment(jobId)
-    } catch {
-      alignment = null
-    }
-
     const pageResult: PageJobResult = {
       pageIndex: i,
       pageNumber: i + 1,
       jobId,
       chunkTiming: done.chunk_timing ?? [],
       extractionMeta,
-      alignment,
     }
     results.push(pageResult)
     onPageDone?.(pageResult)
@@ -110,12 +102,6 @@ export async function fetchExtractionMetadata(jobId: string): Promise<Extraction
   const res = await fetch(`/api/v1/jobs/${jobId}/metadata`)
   if (!res.ok) throw new Error(`Metadata fetch failed: ${await res.text()}`)
   return res.json() as Promise<ExtractionMetadata>
-}
-
-export async function fetchAlignment(jobId: string): Promise<WordAlignmentPayload> {
-  const res = await fetch(`/api/v1/jobs/${jobId}/alignment`)
-  if (!res.ok) throw new Error(`Alignment fetch failed: ${await res.text()}`)
-  return res.json() as Promise<WordAlignmentPayload>
 }
 
 export function getAudioUrl(jobId: string): string {
