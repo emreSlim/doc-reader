@@ -89,6 +89,39 @@ def _library_boilerplate_cleanup(text: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+def clean_marker_text(text: str, remove_references: bool = True) -> str:
+    """
+    Light cleanup for Marker output.
+
+    Keeps Marker's extracted content mostly intact, but removes Markdown syntax
+    and other obvious narration artifacts so TTS doesn't read characters like
+    `#`, `*`, backticks, or raw link markup aloud.
+    """
+    if remove_references:
+        text = _remove_references_section(text)
+
+    # Remove the most common Markdown syntax while preserving the words.
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)          # headings
+    text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)      # hr rules
+    text = re.sub(r"```[\s\S]*?```", "", text)                          # fenced code
+    text = re.sub(r"`([^`\n]+)`", r"\1", text)                         # inline code
+    text = re.sub(r"!\[.*?\]\(.*?\)", "", text)                     # images
+    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)         # markdown links
+    text = re.sub(r"\*{1,3}([^*\n]+)\*{1,3}", r"\1", text)           # bold/italic
+    text = re.sub(r"_{1,3}([^_\n]+)_{1,3}", r"\1", text)               # bold/italic
+
+    # Basic whitespace normalization.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"^\s+$", "", text, flags=re.MULTILINE)
+    text = text.strip()
+
+    if not text:
+        raise ValueError("Text is empty after Marker cleanup.")
+
+    log.info("Light-cleaned Marker text: %d characters remaining.", len(text))
+    return text
+
 def clean_text(text: str, remove_references: bool = True) -> str:
     """
     Clean *text* for clean TTS narration.

@@ -4,7 +4,7 @@ import type { JobResult, PageJobResult, WordAlignmentPayload } from './types'
 export async function uploadAndProcess(file: File): Promise<string> {
   const form = new FormData()
   form.append('file', file)
-  form.append('fast', 'true')
+  form.append('fast', 'false')
   form.append('generate_mp3', 'true')
 
   const res = await fetch('/api/v1/process', { method: 'POST', body: form })

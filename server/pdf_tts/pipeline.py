@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .config import CHUNK_TARGET_CHARS
 from .extractor import extract_pdf, get_extraction_metadata_path, read_markdown
-from .cleaner import clean_text
+from .cleaner import clean_marker_text, clean_text
 from .chunker import chunk_text, save_chunks
 from .tts import generate_audio
 from .merger import merge_audio
@@ -88,9 +88,14 @@ def run_pipeline(
     log.debug("[pipeline] Stage 3 done in %.1fs | raw_chars=%d", _time.perf_counter() - _t0, len(raw_text))
 
     # 4 – Text cleaning
-    log.debug("[pipeline] Stage 4: cleaning text (remove_references=%s)...", remove_references)
-    clean = clean_text(raw_text, remove_references=remove_references)
-    log.debug("[pipeline] Stage 4 done | clean_chars=%d (removed %d chars)", len(clean), len(raw_text) - len(clean))
+    if fast:
+        log.debug("[pipeline] Stage 4: cleaning text (remove_references=%s)...", remove_references)
+        clean = clean_text(raw_text, remove_references=remove_references)
+        log.debug("[pipeline] Stage 4 done | clean_chars=%d (removed %d chars)", len(clean), len(raw_text) - len(clean))
+    else:
+        log.debug("[pipeline] Stage 4: light-cleaning Marker markdown/text (remove_references=%s)...", remove_references)
+        clean = clean_marker_text(raw_text, remove_references=remove_references)
+        log.debug("[pipeline] Stage 4 done for Marker | clean_chars=%d (removed %d chars)", len(clean), len(raw_text) - len(clean))
 
     # 5 – Sentence chunking
     log.debug("[pipeline] Stage 5: chunking (target=%d chars)...", chunk_size)

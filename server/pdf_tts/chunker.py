@@ -32,6 +32,80 @@ def _ensure_nltk_punkt() -> None:
             nltk.download(resource, quiet=True)
 
 
+def _split_long_sentence(sentence: str, max_chars: int) -> list[str]:
+    """Split an over-long sentence at clause boundaries when possible."""
+    sub_parts = re.split(r"(?<=[;,])\s+", sentence)
+    sub_buf: list[str] = []
+    sub_len = 0
+    chunks: list[str] = []
+    for part in sub_parts:
+        if sub_len + len(part) + 1 > max_chars and sub_buf:
+            chunks.append(" ".join(sub_buf))
+            sub_buf, sub_len = [], 0
+        sub_buf.append(part)
+        sub_len += len(part) + 1
+    if sub_buf:
+        chunks.append(" ".join(sub_buf))
+    return chunks
+
+
+def _looks_like_heading(block: str) -> bool:
+    """Heuristic: short standalone title-ish blocks should end with a pause."""
+    words = block.split()
+    if not words:
+        return False
+    if "\n" in block:
+        return False
+    if len(block) > 120 or len(words) > 14:
+        return False
+    return not re.search(r"[.!?:]$", block)
+
+
+def _build_paragraph_units(text: str, max_chars: int) -> list[str]:
+    """
+    Convert text into paragraph-aware speech units.
+
+    Blank-line-separated blocks remain distinct so headings and new paragraphs
+    keep natural pauses even when they end up in the same Piper chunk.
+    """
+    blocks = [b.strip() for b in re.split(r"\n\s*\n+", text) if b.strip()]
+    units: list[str] = []
+
+    for block in blocks:
+        flat = " ".join(line.strip() for line in block.splitlines() if line.strip())
+        if not flat:
+            continue
+
+        if _looks_like_heading(flat):
+            flat = f"{flat}."
+
+        sentences = [s.strip() for s in nltk.sent_tokenize(flat) if s.strip()]
+        if not sentences:
+            sentences = [flat]
+
+        current: list[str] = []
+        current_len = 0
+        for sentence in sentences:
+            if len(sentence) > max_chars:
+                if current:
+                    units.append(" ".join(current))
+                    current, current_len = [], 0
+                units.extend(_split_long_sentence(sentence, max_chars))
+                continue
+
+            if current_len + len(sentence) + 1 > max_chars and current:
+                units.append(" ".join(current))
+                current, current_len = [], 0
+
+            current.append(sentence)
+            current_len += len(sentence) + 1
+
+        if current:
+            units.append(" ".join(current))
+
+    return units
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -61,46 +135,28 @@ def chunk_text(
     """
     _ensure_nltk_punkt()
 
-    sentences = nltk.sent_tokenize(text)
-    log.info("Tokenized into %d sentences.", len(sentences))
+    units = _build_paragraph_units(text, max_chars=max_chars)
+    log.info("Prepared %d paragraph-aware speech units.", len(units))
 
     chunks: list[str] = []
     current: list[str] = []
     current_len = 0
 
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
+    for unit in units:
+        unit = unit.strip()
+        if not unit:
             continue
 
-        # Single sentence exceeds max_chars → split at clause boundaries
-        if len(sentence) > max_chars:
-            if current:
-                chunks.append(" ".join(current))
-                current, current_len = [], 0
-            sub_parts = re.split(r"(?<=[;,])\s+", sentence)
-            sub_buf: list[str] = []
-            sub_len = 0
-            for part in sub_parts:
-                if sub_len + len(part) + 1 > max_chars and sub_buf:
-                    chunks.append(" ".join(sub_buf))
-                    sub_buf, sub_len = [], 0
-                sub_buf.append(part)
-                sub_len += len(part) + 1
-            if sub_buf:
-                chunks.append(" ".join(sub_buf))
-            continue
-
-        # Normal accumulation
-        if current_len + len(sentence) + 1 > target_chars and current:
-            chunks.append(" ".join(current))
+        separator_len = 2 if current else 0  # account for "\n\n"
+        if current_len + len(unit) + separator_len > target_chars and current:
+            chunks.append("\n\n".join(current))
             current, current_len = [], 0
 
-        current.append(sentence)
-        current_len += len(sentence) + 1
+        current.append(unit)
+        current_len += len(unit) + separator_len
 
     if current:
-        chunks.append(" ".join(current))
+        chunks.append("\n\n".join(current))
 
     chunks = [c.strip() for c in chunks if c.strip()]
     log.info("Created %d text chunks.", len(chunks))
